@@ -21,7 +21,7 @@ for _ in range(100):
     net_objs.send_obj(list(observation))
     action = net_objs.recv_obj()
 
-    observation, reward, done, info = env.step(action) # take a random action
+    observation, reward, done, info = env.step(action)
 
     tot_reward += reward
     if done:
