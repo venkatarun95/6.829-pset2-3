@@ -6,14 +6,18 @@ import tensorflow as tf
 from collections import deque
 import queue
 
+import gym
 from tensorpack import *
 from rl_app.model import Model
 from rl_app.network.network import Receiver, Sender
+from rl_app.gameplay import GamePlay
 from scripts.download_model import MODEL_CACHE_DIR, ENV_TO_FNAME
 from rl_app.util import put_overwrite
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--bind_port', type=int, required=True)
+parser.add_argument('--env_name', type=str, required=True)
+parser.add_argument('--frames_port', type=int, required=True)
+parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--n_cpu', default=4, type=int)
 
 
@@ -39,9 +43,9 @@ class Agent:
             session_init=SmartInit(model_fname),
             input_names=['state'],
             output_names=['policy'],
-            session_creator=sesscreate.NewSessionCreator(config=tf.ConfigProto(
-                intra_op_parallelism_threads=self.n_cpu,
-                inter_op_parallelism_threads=self.n_cpu))))
+            session_creator=sesscreate.NewSessionCreator(
+                config=tf.ConfigProto(intra_op_parallelism_threads=n_cpu,
+                                      inter_op_parallelism_threads=n_cpu))))
 
     self._frames_q = queue.Queue(1)
     self._actions_q = queue.Queue(1)
@@ -63,7 +67,7 @@ class Agent:
   def _process(self):
     """deques the frames and runs prediction network on them."""
     while True:
-      s = self._frames_q.get()
+      s = GamePlay.decode_obs(self._frames_q.get())
       if s is None:
         return
       assert isinstance(s, np.ndarray)
@@ -81,10 +85,12 @@ class Agent:
 def main(argv):
   args = parser.parse_args(argv[1:])
   agent = Agent(
-      port=args.bind_port,
+      env_name=args.env_name,
+      frames_port=args.frames_port,
+      action_port=args.action_port,
       n_cpu=args.n_cpu,
   )
-  agent.serve_forever()
+  agent.start()
 
 
 if __name__ == '__main__':

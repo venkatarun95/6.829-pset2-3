@@ -1,5 +1,6 @@
 import socket
-from rl_app.network import get_serializer, get_deserializer, int_from_bytes, int_to_bytes
+from rl_app.network.serializer import get_serializer, get_deserializer, int_from_bytes, int_to_bytes
+import time
 from threading import Thread
 
 
@@ -12,9 +13,12 @@ class Receiver:
                serializer='pyarrow',
                deserializer='pyarrow'):
     self._thread = None
+    self.host = host
+    self.port = port
     self._serializer = get_serializer(serializer)
     self._deserializer = get_deserializer(deserializer)
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     self.bind = bind
     if bind:
       self.socket.bind((host, port))
@@ -23,10 +27,11 @@ class Receiver:
       while True:
         try:
           self.socket.connect((host, port))
+          print('Connected to %s:%d' % (host, port))
           break
         except ConnectionError:
           time.sleep(.5)
-          print('connect to %s:%d failed. Retrying in 500ms.')
+          print('connect to %s:%d failed. Retrying in 500ms.' % (host, port))
 
   def start_loop(self, handler, blocking=False):
     """
@@ -41,18 +46,21 @@ class Receiver:
           if non-blocking, returns the created thread that has started
       """
     if blocking:
-      self._loop(handler)
+      self._start(handler)
     else:
       if self._thread:
         raise RuntimeError('loop is already running')
-      self._thread = Thread(target=self._loop, args=[handler])
+      self._thread = Thread(target=self._start, args=[handler])
       self._thread.start()
       return self._thread
 
   def _start(self, handler):
     if self.bind:
       self.socket.listen(1)
-      conn, addr = s.accept()
+      print('server %s:%d waiting to accept new connections' %
+            (self.host, self.port))
+      conn, addr = self.socket.accept()
+      print('Connection accepted to client ', addr)
       with conn:
         self._loop(conn, handler)
     else:
@@ -61,6 +69,8 @@ class Receiver:
   def _read_header(self, conn, msg):
     while len(msg) < 4:
       data = conn.recv(1024)
+      if data is None:
+        raise ConnectionError
       msg.extend(data)
 
     assert len(msg) >= 4
@@ -69,25 +79,27 @@ class Receiver:
     return int_from_bytes(header), msg
 
   def _loop(self, conn, handler):
-    read_header = False
+    # whether to read the header in the
+    # next iteration or not.
+    read_header = True
     msg = bytearray()
     while True:
-      data = conn.recv(1024)
-      if not data:
-        # we only handle one connection
-        return
-      msg.extend(data)
-      while l <= len(msg):
+      if read_header:
+        try:
+          l, msg = self._read_header(conn, msg)
+        except ConnectionError:
+          return
+        read_header = False
+
+      if l <= len(msg):
         handler(self._deserializer(msg[:l]))
         msg = msg[l:]
-        # if nothing left connection could terminate here
-        if len(msg) == 0:
-          data = conn.recv(1024)
-          if not data:
-            return
-          msg.extend(data)
-
-        l, msg = self._read_header(conn, msg)
+        read_header = True
+      else:
+        data = conn.recv(1024)
+        if not data:
+          return
+        msg.extend(data)
 
 
 class Sender(Receiver):
@@ -98,7 +110,7 @@ class Sender(Receiver):
 
   def _loop(self, conn, handler):
     while True:
-      data = handler.get()
+      data = handler()
       if data is None:
         conn.close()
         return
