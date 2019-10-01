@@ -1,13 +1,16 @@
 $setup = <<-SCRIPT
-sudo apt-get update
-sudo apt-get --yes install build-essential \
-  git python3 python3-pip bridge-utils mahimahi python-opengl
-sudo python3 -m pip install gym #atari-py roboschool
+sudo DEBIAN_FRONTEND=noninteractive apt-get --yes update
+sudo DEBIAN_FRONTEND=noninteractive apt-get --yes install build-essential \
+  git python3 python3-pip bridge-utils mahimahi python-opengl cmake \
+  libopenmpi-dev python3-dev zlib1g-dev
+
+sudo python3 -m pip install gym termcolor tensorflow opencv-python atari-py
+sudo python3 -m pip install --upgrade git+https://github.com/tensorpack/tensorpack.git
+
 cd /home/vagrant
-sudo pip install termcolor
 
 # Install Rust
-curl https://sh.rustup.rs -sSf | sh -- -y
+curl https://sh.rustup.rs -sSf | sh -s -- -y
 source $HOME/.cargo/env
 rustup default nightly
 

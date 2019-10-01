@@ -12,20 +12,20 @@ sock.listen(1)
 env = gym.make('CartPole-v0')
 
 while True:
-    # Wait for a connection
-    print('waiting for a connection')
-    connection, client_address = sock.accept()
-    net_objs = NetObjects(connection)
+  # Wait for a connection
+  print('waiting for a connection')
+  connection, client_address = sock.accept()
+  net_objs = NetObjects(connection)
 
-    try:
-        print('connection from', client_address)
+  try:
+    print('connection from', client_address)
 
-        while True:
-            obs = net_objs.recv_obj()
-            # Compute the action and respond
-            action = env.action_space.sample()
-            net_objs.send_obj(action)
+    while True:
+      obs = net_objs.recv_obj()
+      # Compute the action and respond
+      action = env.action_space.sample()
+      net_objs.send_obj(action)
 
-    finally:
-        # Clean up the connection
-        connection.close()
+  finally:
+    # Clean up the connection
+    connection.close()
