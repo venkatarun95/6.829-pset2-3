@@ -30,6 +30,14 @@ def str2bytes(string):
     return string.encode('UTF-8')
 
 
+def int_to_bytes(x):
+  return x.to_bytes(4, 'big')
+
+
+def int_from_bytes(xbytes):
+  return int.from_bytes(xbytes, 'big')
+
+
 _SERIALIZERS = {
     'str': str2bytes,
     'pickle': pickle.dumps,

@@ -3,50 +3,39 @@ import argparse
 import numpy as np
 import os
 import tensorflow as tf
+from collections import deque
+import queue
 
+from tensorpack import *
 from rl_app.model import Model
-from rl_app.network.network import ZmqServer
+from rl_app.network.network import Receiver, Sender
+from scripts.download_model import MODEL_CACHE_DIR, ENV_TO_FNAME
+from rl_app.util import put_overwrite
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--bind_port', type=int, required=True)
 parser.add_argument('--n_cpu', default=4, type=int)
 
 
+def get_num_actions(env_name):
+  env = gym.make(env_name)
+  return env.action_space.n
+
+
 class Agent:
 
-  def __init__(self, port, n_cpu):
-    self.pred = None
-    self.zmq_server = ZmqServer(host='*', port=port)
-    self.n_cpu = n_cpu
-
-  def serve_forever(self):
-    self.zmq_server.start_loop(self._handle_requests, blocking=True)
-
-  def _handle_request(self, req):
-    req_fn, args, kwargs = req
-    assert isinstance(req_fn, str)
-    try:
-      fn = getattr(self, req_fn)
-      return fn(*args, **kwargs)
-    except AttributeError:
-      logging.error('Unknown request func name received: %s', req_fn)
-
-  def register(self, env_name, n_actions, action_receiver_port):
-    if self.pred:
-      raise Exception(
-          'Multiple registration requests received. This is not supported.')
+  def __init__(self, env_name, frames_port, action_port, n_cpu):
 
     model_fname = os.path.join(MODEL_CACHE_DIR, ENV_TO_FNAME[env_name])
-
+    num_actions = get_num_actions(env_name)
     if not os.path.isfile(model_fname):
       raise Exception(
           'Download model weights into %s before starting the agent. See Instructions for details.'
           % model_fname)
 
-    self._frames_q = threading.Queue()
     self.pred = OfflinePredictor(
         PredictConfig(
-            model=Model(),
+            model=Model(num_actions),
             session_init=SmartInit(model_fname),
             input_names=['state'],
             output_names=['policy'],
@@ -54,39 +43,39 @@ class Agent:
                 intra_op_parallelism_threads=self.n_cpu,
                 inter_op_parallelism_threads=self.n_cpu))))
 
-    frames_q = threading.Queue()
-    actions_q = threading.Queue()
-    self._frames_q = frames_q
-    self._actions_q = actions_q
-    self._process_thread = threading.Thread(target=self._process,
-                                            args=(
-                                                frames_q,
-                                                actions_q,
-                                            ))
-    self._action_pusher_thread = threading.Thread(target=self._push_actions,
-                                                  args=(actions_q, ))
-    self._action_receiver = ZmqSender(host='')
-    self._process_thread.start()
+    self._frames_q = queue.Queue(1)
+    self._actions_q = queue.Queue(1)
+    self.n_cpu = n_cpu
+    self.frames_port = frames_port
+    self.action_port = action_port
 
-  def _process(self, frames_q, actions_q):
+  def start(self):
+    self._frames_socket = Receiver(host='0.0.0.0',
+                                   port=self.frames_port,
+                                   bind=True)
+    self._actions_socket = Sender(host='0.0.0.0',
+                                  port=self.action_port,
+                                  bind=True)
+    self._frames_socket.start_loop(self.record_frame, blocking=False)
+    self._actions_socket.start_loop(self._get_action, blocking=False)
+    self._process()
+
+  def _process(self):
     """deques the frames and runs prediction network on them."""
     while True:
-      s = frames_q.get()
+      s = self._frames_q.get()
       if s is None:
         return
       assert isinstance(s, np.ndarray)
       s = np.expand_dims(s, 0)  # batch
       act = self.pred(s)[0][0].argmax()
-      actions_q.put(act)
+      put_overwrite(self._actions_q, act)
 
-  def _push_actions(self, actions_q):
-    while True:
-      act = actions_q.get()
-      self._action_sender.
+  def record_frame(self, frame):
+    put_overwrite(self._frames_q, frame)
 
-
-  def record_frame(self, s):
-    self._frames_q.put(s)
+  def _get_action(self):
+    return self._actions_q.get()
 
 
 def main(argv):
