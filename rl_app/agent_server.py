@@ -19,6 +19,10 @@ parser.add_argument('--env_name', type=str, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--n_cpu', default=4, type=int)
+parser.add_argument('--model_fname',
+                    type=str,
+                    default=None,
+                    help='Optional string to specify the model weights')
 
 
 def get_num_actions(env_name):
@@ -28,9 +32,10 @@ def get_num_actions(env_name):
 
 class Agent:
 
-  def __init__(self, env_name, frames_port, action_port, n_cpu):
+  def __init__(self, env_name, frames_port, action_port, n_cpu, model_fname):
 
-    model_fname = os.path.join(MODEL_CACHE_DIR, ENV_TO_FNAME[env_name])
+    model_fname = model_fname or os.path.join(MODEL_CACHE_DIR,
+                                              ENV_TO_FNAME[env_name])
     num_actions = get_num_actions(env_name)
     if not os.path.isfile(model_fname):
       raise Exception(
@@ -84,12 +89,11 @@ class Agent:
 
 def main(argv):
   args = parser.parse_args(argv[1:])
-  agent = Agent(
-      env_name=args.env_name,
-      frames_port=args.frames_port,
-      action_port=args.action_port,
-      n_cpu=args.n_cpu,
-  )
+  agent = Agent(env_name=args.env_name,
+                frames_port=args.frames_port,
+                action_port=args.action_port,
+                n_cpu=args.n_cpu,
+                model_fname=args.model_fname)
   agent.start()
 
 

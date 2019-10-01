@@ -59,3 +59,7 @@ Contact Instructions
 --------------------
 
 If you wish to contact the course staff regarding the psets (e.g. to ask for extensions), please include the keyword '6.829-PSET2' or '6.829-PSET3' in the subject online.
+
+# Useful commands
+# for xdisplay from ssh
+export DISPLAY=localhost:10.0

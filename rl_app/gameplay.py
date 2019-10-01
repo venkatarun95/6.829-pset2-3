@@ -19,6 +19,7 @@ parser.add_argument('--server_ip', type=str, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--sps', type=int, default=20)
+parser.add_argument('--frameskip', type=int, default=1)
 parser.add_argument('--render', dest='render', action='store_true')
 parser.add_argument('--dump_dir',
                     type=str,
@@ -145,6 +146,8 @@ def main(argv):
       action_port=args.action_port,
       dump_dir=args.dump_dir,
       time_limit=args.time_limit,
+      render=args.render,
+      frameskip=args.frameskip,
   )
   game_play.start()
 
