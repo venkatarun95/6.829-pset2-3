@@ -73,7 +73,7 @@ class Receiver:
   def _read_header(self, conn, msg):
     while len(msg) < 4:
       data = conn.recv(1024)
-      if data is None:
+      if not data:
         raise ConnectionError
       msg.extend(data)
 
@@ -115,9 +115,6 @@ class Sender(Receiver):
   def _loop(self, conn, handler):
     while True:
       data = handler()
-      if data is None:
-        conn.close()
-        return
       msg = self._serializer(data)
       msg = self._add_header(msg)
       conn.sendall(msg)

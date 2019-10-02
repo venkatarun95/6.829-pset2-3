@@ -1,3 +1,7 @@
+"""
+  Example invokation:
+  python scripts/run_exp.py -- --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4
+"""
 import threading
 import argparse
 import os
@@ -96,32 +100,27 @@ def get_mahimahi_stub(args):
 
 
 def get_server_cmd(args):
-  export_cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
-  cmd = 'python3 rl_app/agent_server.py -- --env_name=%s' % args.env_name
-  cmd += ' --frames_port=10000 --action_port=11000 --model_fname=%s/%s.npz' % (
+  cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
+  cmd += 'python3 rl_app/agent_server.py -- --env_name=%s' % args.env_name
+  cmd += ' --frames_port=10000 --action_port=10001 --gameover_port=10002 --model_fname=%s/%s.npz' % (
       args.model_cache_dir, args.env_name)
-  cmd += ' --time=%d' % args.time
-  assert '"' not in cmd
-  cmd = '%s bash -c "%s"' % (export_cmd, cmd)
   return cmd
 
 
 def get_client_cmd(args, disable_mahimahi):
   dump_dir = os.path.join(args.results_dir, args.name, 'game_results')
-  export_cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
-  cmd = 'python3 rl_app/gameplay.py -- --frameskip=3 --sps=30 --env_name=%s' % args.env_name
+  cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
+  cmd += 'python3 rl_app/gameplay.py -- --frameskip=3 --sps=30 --env_name=%s' % args.env_name
   if disable_mahimahi:
     cmd += ' --server_ip=127.0.0.1'
   else:
     cmd += " --server_ip=`echo '$MAHIMAHI_BASE'`"
-  cmd += ' --frames_port=10000 --action_port=11000 --results_dir=%s ' % dump_dir
+  cmd += ' --frames_port=10000 --action_port=10001 --gameover_port=10002 --results_dir=%s ' % dump_dir
   cmd += ' --time=%d' % args.time
   if args.render:
     cmd += ' --render'
   if args.dump_video:
     cmd += ' --dump_video'
-
-  cmd = '%s %s' % (export_cmd, cmd)
   return cmd
 
 

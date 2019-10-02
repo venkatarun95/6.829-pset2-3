@@ -12,6 +12,7 @@ from absl import app
 from rl_app.atari_wrapper import (FireResetEnv, FrameStack, LimitLength,
                                   MapState)
 from rl_app.network.network import Receiver, Sender
+from rl_app.network.zmq import ZmqSender
 from rl_app.util import Timer, put_overwrite
 from tensorpack import *
 
@@ -20,6 +21,7 @@ parser.add_argument('--env_name', type=str, required=True)
 parser.add_argument('--server_ip', type=str, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--action_port', type=int, required=True)
+parser.add_argument('--gameover_port', type=int, required=True)
 parser.add_argument('--sps', type=int, default=20)
 parser.add_argument('--frameskip', type=int, default=1)
 parser.add_argument('--render', dest='render', action='store_true')
@@ -43,6 +45,7 @@ class GamePlay:
       agent_server_ip,
       frames_port,
       action_port,
+      gameover_port,
       time_limit,
       render=False,
       results_dir=None,
@@ -66,11 +69,13 @@ class GamePlay:
     self.server_ip = agent_server_ip
     self.frames_port = frames_port
     self.action_port = action_port
+    self.gameover_port = gameover_port
     self.render = render
     self.env = env
     self.lock = threading.Lock()
     self._latest_action = None
     self._frames_q = queue.Queue(1)
+    self._gameover_q = queue.Queue(1)
 
   def start(self):
     self._frames_socket = Sender(host=self.server_ip,
@@ -79,9 +84,16 @@ class GamePlay:
     self._actions_socket = Receiver(host=self.server_ip,
                                     port=self.action_port,
                                     bind=False)
+    self._gameover_socket = ZmqSender(host=self.server_ip,
+                                      port=self.gameover_port,
+                                      serializer='pickle',
+                                      deserializer='pickle',
+                                      bind=False)
     self._frames_socket.start_loop(self.push_frames, blocking=False)
     self._actions_socket.start_loop(self._receive_actions, blocking=False)
     self._process()
+    self._gameover_socket.send(1)
+    self._gameover_socket.socket.close()
 
   def _receive_actions(self, act):
     with self.lock:
@@ -167,6 +179,7 @@ def main(argv):
       agent_server_ip=args.server_ip,
       frames_port=args.frames_port,
       action_port=args.action_port,
+      gameover_port=args.gameover_port,
       results_dir=args.results_dir,
       dump_video=args.dump_video,
       time_limit=args.time,

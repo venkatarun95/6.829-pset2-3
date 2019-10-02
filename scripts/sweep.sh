@@ -11,21 +11,34 @@ rtt=$3
 time=$4
 rest="${@:5}"
 
+echo "Now running...."
+
+echo "python3 scripts/run_exp.py -- -n=$name --model_cache_dir=/home/arc/model_cache_dir/ \
+--results_dir=/home/arc/results/ --rtt=$rtt --time=$time --thr=$thr --dump_video $rest"
+
 python3 scripts/run_exp.py -- -n=$name --model_cache_dir=/home/arc/model_cache_dir/ \
 --results_dir=/home/arc/results/ --rtt=$rtt --time=$time --thr=$thr --dump_video $rest
 }
 
-rtt=10
-time=120
+time=60
 
-for frac in 2 10; do
-  for cc in reno cubic vegas bbr; do
-    sudo bash -c "echo $cc > /proc/sys/net/ipv4/tcp_congestion_control"
-    for thr in 1 2 4 8 100; do
-      run "${cc}_rtt_${rtt}_thr_${thr}_frac_${frac}" $thr $rtt $time --queue_size_factor=$frac
+for rtt in 10 20 50; do
+  for frac in 2 10; do
+    for cc in cubic reno vegas bbr; do
+      echo 'arc' | sudo -S bash -c "echo $cc > /proc/sys/net/ipv4/tcp_congestion_control"
+      i=0
+      for thr in 1 2 4 8 100; do
+        (( i += 1 ))
+        # disable for now
+        if (( $i % 2 == 0 ))
+        then
+          wait
+        fi
+        run "${cc}_rtt_${rtt}_thr_${thr}_frac_${frac}" $thr $rtt $time --queue_size_factor=$frac &
+      done
     done
   done
 done
 
 # set it back to what it was.
-sudo bash -c "echo cubic > /proc/sys/net/ipv4/tcp_congestion_control"
+echo 'arc' | sudo -S bash -c "echo cubic > /proc/sys/net/ipv4/tcp_congestion_control"
