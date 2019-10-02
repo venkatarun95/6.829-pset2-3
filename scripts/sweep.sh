@@ -26,15 +26,8 @@ for rtt in 10 20 50; do
   for frac in 2 10; do
     for cc in cubic reno vegas bbr; do
       echo 'arc' | sudo -S bash -c "echo $cc > /proc/sys/net/ipv4/tcp_congestion_control"
-      i=0
       for thr in 1 2 4 8 100; do
-        (( i += 1 ))
-        # disable for now
-        if (( $i % 2 == 0 ))
-        then
-          wait
-        fi
-        run "${cc}_rtt_${rtt}_thr_${thr}_frac_${frac}" $thr $rtt $time --queue_size_factor=$frac &
+        run "${cc}_rtt_${rtt}_thr_${thr}_frac_${frac}" $thr $rtt $time --queue_size_factor=$frac
       done
     done
   done

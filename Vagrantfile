@@ -7,6 +7,9 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get --yes install build-essential \
 sudo python3 -m pip install gym termcolor tensorflow opencv-python atari-py
 sudo python3 -m pip install --upgrade git+https://github.com/tensorpack/tensorpack.git
 
+# for mahimahi
+sudo sysctl -w net.ipv4.ip_forward=1
+
 cd /home/vagrant
 
 # Install Rust

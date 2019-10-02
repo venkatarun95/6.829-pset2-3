@@ -158,6 +158,10 @@ class GamePlay:
     print('')
     print('# of steps elapsed: ', n_steps)
     print('# of skipped actions: ', num_skipped_actions)
+    if info['ale.lives']:
+      print('# of lives left: ', info['ale.lives'])
+    else:
+      print('Gameover - No lives left!!')
     print('Score: ', sum_r)
     self._log_results(
         **dict(n_steps=n_steps,
