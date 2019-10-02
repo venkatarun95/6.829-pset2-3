@@ -1,18 +1,21 @@
-from absl import app
 import argparse
-import numpy as np
 import os
-import tensorflow as tf
+import sys
+import time
 from collections import deque
-import queue
+from threading import Thread
 
 import gym
-from tensorpack import *
+import numpy as np
+import queue
+import tensorflow as tf
+from absl import app
+from rl_app.gameplay import GamePlay
 from rl_app.model import Model
 from rl_app.network.network import Receiver, Sender
-from rl_app.gameplay import GamePlay
-from scripts.download_model import MODEL_CACHE_DIR, ENV_TO_FNAME
-from rl_app.util import put_overwrite
+from rl_app.util import Timer, put_overwrite
+from scripts.download_model import ENV_TO_FNAME, MODEL_CACHE_DIR
+from tensorpack import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', type=str, required=True)
@@ -23,6 +26,7 @@ parser.add_argument('--model_fname',
                     type=str,
                     default=None,
                     help='Optional string to specify the model weights')
+parser.add_argument('--time', type=int, default=60)
 
 
 def get_num_actions(env_name):
@@ -32,7 +36,8 @@ def get_num_actions(env_name):
 
 class Agent:
 
-  def __init__(self, env_name, frames_port, action_port, n_cpu, model_fname):
+  def __init__(self, env_name, frames_port, action_port, n_cpu, model_fname,
+               total_time):
 
     model_fname = model_fname or os.path.join(MODEL_CACHE_DIR,
                                               ENV_TO_FNAME[env_name])
@@ -54,6 +59,7 @@ class Agent:
 
     self._frames_q = queue.Queue(1)
     self._actions_q = queue.Queue(1)
+    self.total_time = total_time
     self.n_cpu = n_cpu
     self.frames_port = frames_port
     self.action_port = action_port
@@ -67,7 +73,12 @@ class Agent:
                                   bind=True)
     self._frames_socket.start_loop(self.record_frame, blocking=False)
     self._actions_socket.start_loop(self._get_action, blocking=False)
-    self._process()
+    self._process_thread = Thread(target=self._process)
+    self._process_thread.daemon = True
+    self._process_thread.start()
+    while not self._frames_socket.connected:
+      time.sleep(.1)
+    time.sleep(self.total_time)
 
   def _process(self):
     """deques the frames and runs prediction network on them."""
@@ -76,9 +87,13 @@ class Agent:
       if s is None:
         return
       assert isinstance(s, np.ndarray)
-      s = np.expand_dims(s, 0)  # batch
-      act = self.pred(s)[0][0].argmax()
+      with Timer() as agent_timer:
+        s = np.expand_dims(s, 0)  # batch
+        act = self.pred(s)[0][0].argmax()
       put_overwrite(self._actions_q, act)
+
+      print('.', end='', flush=True)
+      # print('Avg agent neural net eval time: %.3f' % agent_timer.time())
 
   def record_frame(self, frame):
     put_overwrite(self._frames_q, frame)
@@ -93,7 +108,8 @@ def main(argv):
                 frames_port=args.frames_port,
                 action_port=args.action_port,
                 n_cpu=args.n_cpu,
-                model_fname=args.model_fname)
+                model_fname=args.model_fname,
+                total_time=args.time + 5)
   agent.start()
 
 

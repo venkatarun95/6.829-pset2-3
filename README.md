@@ -63,3 +63,5 @@ If you wish to contact the course staff regarding the psets (e.g. to ask for ext
 # Useful commands
 # for xdisplay from ssh
 export DISPLAY=localhost:10.0
+
+mm-delay 50 mm-link --uplink-queue="droptail" --uplink-queue-args="packets=800" bw96.mahi bw96.mahi

@@ -108,6 +108,7 @@ class GamePlay:
     sum_r = 0
     n_steps = 0
     isOver = False
+    num_skipped_actions = 0
     put_overwrite(self._frames_q, self._encode_obs(obs))
 
     while not isOver:
@@ -118,9 +119,11 @@ class GamePlay:
           self._latest_action = None
 
         if act is None:
+          num_skipped_actions += 1
           act = self._get_default_action()
 
         obs, r, isOver, info = env.step(act)
+
         put_overwrite(self._frames_q, self._encode_obs(obs))
 
         if self.render:
@@ -132,7 +135,9 @@ class GamePlay:
       sum_r += r
       n_steps += 1
 
+    print('')
     print('# of steps elapsed: ', n_steps)
+    print('# of skipped actions: ', num_skipped_actions)
     print('Score: ', sum_r)
 
 

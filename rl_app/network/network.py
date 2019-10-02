@@ -20,6 +20,7 @@ class Receiver:
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     self.bind = bind
+    self.connected = False
     if bind:
       self.socket.bind((host, port))
     else:
@@ -27,6 +28,7 @@ class Receiver:
       while True:
         try:
           self.socket.connect((host, port))
+          self.connected = True
           print('Connected to %s:%d' % (host, port))
           break
         except ConnectionError:
@@ -51,6 +53,7 @@ class Receiver:
       if self._thread:
         raise RuntimeError('loop is already running')
       self._thread = Thread(target=self._start, args=[handler])
+      self._thread.daemon = True
       self._thread.start()
       return self._thread
 
@@ -60,6 +63,7 @@ class Receiver:
       print('server %s:%d waiting to accept new connections' %
             (self.host, self.port))
       conn, addr = self.socket.accept()
+      self.connected = True
       print('Connection accepted to client ', addr)
       with conn:
         self._loop(conn, handler)
