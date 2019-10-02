@@ -10,6 +10,7 @@ MTU_BYTES = 1500
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--render', dest='render', action='store_true')
+parser.add_argument('--dump_video', dest='dump_video', action='store_true')
 parser.add_argument('--name',
                     '-n',
                     type=str,
@@ -113,10 +114,13 @@ def get_client_cmd(args, disable_mahimahi):
     cmd += ' --server_ip=127.0.0.1'
   else:
     cmd += " --server_ip=`echo '$MAHIMAHI_BASE'`"
-  cmd += ' --frames_port=10000 --action_port=11000 --dump_dir=%s ' % dump_dir
+  cmd += ' --frames_port=10000 --action_port=11000 --results_dir=%s ' % dump_dir
   cmd += ' --time=%d' % args.time
   if args.render:
     cmd += ' --render'
+  if args.dump_video:
+    cmd += ' --dump_video'
+
   cmd = '%s %s' % (export_cmd, cmd)
   return cmd
 

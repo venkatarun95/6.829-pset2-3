@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 import threading
 import time
 
@@ -21,11 +23,12 @@ parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--sps', type=int, default=20)
 parser.add_argument('--frameskip', type=int, default=1)
 parser.add_argument('--render', dest='render', action='store_true')
-parser.add_argument('--dump_dir',
+parser.add_argument('--dump_video', dest='dump_video', action='store_true')
+parser.add_argument('--results_dir',
                     type=str,
-                    default=None,
-                    help='Dump the video here')
-parser.add_argument('--time_limit', type=int, default=60)
+                    required=True,
+                    help='Dump the video results here (optionally video)')
+parser.add_argument('--time', type=int, default=60)
 
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
@@ -42,18 +45,23 @@ class GamePlay:
       action_port,
       time_limit,
       render=False,
-      dump_dir=None,
+      results_dir=None,
+      dump_video=None,
       frameskip=1,
   ):
     env = gym.make(env_name, frameskip=frameskip, repeat_action_probability=0.)
-    if dump_dir:
-      env = gym.wrappers.Monitor(env, dump_dir, video_callable=lambda _: True)
+    if dump_video:
+      env = gym.wrappers.Monitor(env,
+                                 results_dir,
+                                 video_callable=lambda _: True,
+                                 force=True)
     env = FireResetEnv(env)
     env = MapState(env, lambda im: cv2.resize(im, IMAGE_SIZE))
     env = FrameStack(env, FRAME_HISTORY)
     env = LimitLength(env, sps * time_limit)
 
     self.sps = sps
+    self.results_dir = results_dir
     self._step_sleep_time = 1.0 / sps
     self.server_ip = agent_server_ip
     self.frames_port = frames_port
@@ -139,6 +147,16 @@ class GamePlay:
     print('# of steps elapsed: ', n_steps)
     print('# of skipped actions: ', num_skipped_actions)
     print('Score: ', sum_r)
+    self._log_results(
+        **dict(n_steps=n_steps,
+               total_score=sum_r,
+               n_skipped_actions=num_skipped_actions,
+               lives_remaining=info['ale.lives']))
+
+  def _log_results(self, **kwargs):
+    os.system('mkdir -p %s' % self.results_dir)
+    with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
+      json.dump(kwargs, f, indent=4, sort_keys=True)
 
 
 def main(argv):
@@ -149,8 +167,9 @@ def main(argv):
       agent_server_ip=args.server_ip,
       frames_port=args.frames_port,
       action_port=args.action_port,
-      dump_dir=args.dump_dir,
-      time_limit=args.time_limit,
+      results_dir=args.results_dir,
+      dump_video=args.dump_video,
+      time_limit=args.time,
       render=args.render,
       frameskip=args.frameskip,
   )
