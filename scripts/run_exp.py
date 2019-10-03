@@ -1,12 +1,12 @@
 """
   Example invokation:
-  python scripts/run_exp.py -- --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4
+  python3 scripts/run_exp.py --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4 --action_port=10000 --frames_port=10001
 """
 import threading
+import subprocess
 import argparse
 import os
 import sys
-from absl import app
 
 INF_TRACE = 'mm_traces/100mbps.log'
 MAHIMAHI_BASE = '100.64.0.4'
@@ -43,6 +43,9 @@ parser.add_argument('--disable_mahimahi',
                     dest='disable_mahimahi',
                     action='store_true')
 parser.add_argument('--dry_run', dest='dry_run', action='store_true')
+parser.add_argument('--action_port', type=int, required=True)
+parser.add_argument('--frames_port', type=int, required=True)
+parser.add_argument('remaining_args', nargs='*')
 
 
 def run_cmd(cmd, blocking=True, dry_run=False):
@@ -50,27 +53,29 @@ def run_cmd(cmd, blocking=True, dry_run=False):
   def _run_cmd():
     if dry_run:
       print(cmd)
-      ret = 0
+      return 0
     else:
-      ret = os.system(cmd)
-
-    if ret > 0:
-      raise Exception('Failure executing command %s' % cmd)
-    return ret
+      return os.system(cmd)
 
   if blocking:
     return _run_cmd()
   else:
     t = threading.Thread(target=_run_cmd)
+    t.daemon = True
     t.start()
     return t
 
 
-# def set_cc_algorithm(cc, dry_run):
-#   run_cmd(
-#       'sudo bash -c "echo %s > /proc/sys/net/ipc4/tcp_congestion_control"' %
-#       cc,
-#       dry_run=dry_run)
+def subprocess_cmd(command, dry_run=False):
+  if dry_run:
+    print(command)
+    return None
+  else:
+    process = subprocess.Popen(command,
+                               stdout=sys.stdout,
+                               stderr=sys.stderr,
+                               shell=True)
+    return process
 
 
 def get_mahimahi_stub(args):
@@ -101,9 +106,10 @@ def get_mahimahi_stub(args):
 
 def get_server_cmd(args):
   cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
-  cmd += 'python3 rl_app/agent_server.py -- --env_name=%s' % args.env_name
-  cmd += ' --frames_port=10000 --action_port=10001 --gameover_port=10002 --model_fname=%s/%s.npz' % (
-      args.model_cache_dir, args.env_name)
+  cmd += 'exec python3 rl_app/agent_server.py -- --env_name=%s' % args.env_name
+  cmd += ' --frames_port=%d --action_port=%d --model_fname=%s/%s.npz' % (
+      args.frames_port, args.action_port, args.model_cache_dir, args.env_name)
+  cmd += ' --time=%d' % (args.time + 20)
   return cmd
 
 
@@ -115,12 +121,17 @@ def get_client_cmd(args, disable_mahimahi):
     cmd += ' --server_ip=127.0.0.1'
   else:
     cmd += " --server_ip=`echo '$MAHIMAHI_BASE'`"
-  cmd += ' --frames_port=10000 --action_port=10001 --gameover_port=10002 --results_dir=%s ' % dump_dir
+  cmd += ' --frames_port=%d --action_port=%d --results_dir=%s ' % (
+      args.frames_port, args.action_port, dump_dir)
   cmd += ' --time=%d' % args.time
   if args.render:
     cmd += ' --render'
   if args.dump_video:
     cmd += ' --dump_video'
+
+  if args.remaining_args:
+    cmd += ' '
+    cmd += (' '.join(args.remaining_args))
   return cmd
 
 
@@ -139,16 +150,27 @@ def main(argv):
     #                   os.path.join(args.results_dir, args.name))
     os.system('mkdir -p %s' % os.path.join(args.results_dir, args.name))
 
-  # set_cc_algorithm(args.cc, args.dry_run)
   stub = get_mahimahi_stub(args)
   cli_cmd = get_client_cmd(args, args.disable_mahimahi)
   if not args.disable_mahimahi:
     cli_cmd = stub.format(cmd=cli_cmd)
-  t1 = run_cmd(cli_cmd, blocking=False, dry_run=args.dry_run)
-  t2 = run_cmd(get_server_cmd(args), blocking=False, dry_run=args.dry_run)
-  t1.join()
-  t2.join()
+  server_cmd = get_server_cmd(args)
+  process = subprocess_cmd(server_cmd, dry_run=args.dry_run)
+  ret = run_cmd(cli_cmd, blocking=True, dry_run=args.dry_run)
+
+  ret2 = 0
+  if not args.dry_run:
+    ret2 = process.poll()
+    if ret2 is None:
+      process.kill()
+      ret2 = 0
+
+  if ret != 0:
+    raise Exception('Failure executing command %s' % cli_cmd)
+
+  if ret2 != 0:
+    raise Exception('Failure executing command %s' % server_cmd)
 
 
 if __name__ == '__main__':
-  app.run(main)
+  main(sys.argv)

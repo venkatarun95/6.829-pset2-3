@@ -32,10 +32,10 @@ class Receiver:
           print('Connected to %s:%d' % (host, port))
           break
         except ConnectionError:
-          time.sleep(.5)
-          print('connect to %s:%d failed. Retrying in 500ms.' % (host, port))
+          time.sleep(.2)
+          print('connect to %s:%d failed. Retrying in 200ms' % (host, port))
 
-  def start_loop(self, handler, blocking=False):
+  def start_loop(self, handler, new_connection_callback=None, blocking=False):
     """
       Args:
           handler: function that takes an incoming client message
@@ -43,32 +43,37 @@ class Receiver:
           blocking: True to block the main program
               False to launch a thread in the background
               and immediately returns
-
       Returns:
           if non-blocking, returns the created thread that has started
       """
     if blocking:
-      self._start(handler)
+      self._start(handler, new_connection_callback)
     else:
       if self._thread:
         raise RuntimeError('loop is already running')
-      self._thread = Thread(target=self._start, args=[handler])
+      self._thread = Thread(target=self._start,
+                            args=[handler, new_connection_callback])
       self._thread.daemon = True
       self._thread.start()
       return self._thread
 
-  def _start(self, handler):
-    if self.bind:
-      self.socket.listen(1)
-      print('server %s:%d waiting to accept new connections' %
-            (self.host, self.port))
-      conn, addr = self.socket.accept()
-      self.connected = True
-      print('Connection accepted to client ', addr)
-      with conn:
-        self._loop(conn, handler)
-    else:
-      self._loop(self.socket, handler)
+  def _start(self, handler, new_connection_callback):
+    try:
+      if self.bind:
+        self.socket.listen(1)
+        print('server %s:%d waiting to accept new connections' %
+              (self.host, self.port))
+        conn, addr = self.socket.accept()
+        self.connected = True
+        if new_connection_callback:
+          new_connection_callback(conn, addr)
+        print('Connection accepted to client ', addr)
+        with conn:
+          self._loop(conn, handler)
+      else:
+        self._loop(self.socket, handler)
+    except ConnectionResetError:
+      self.connected = False
 
   def _read_header(self, conn, msg):
     while len(msg) < 4:

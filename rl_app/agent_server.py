@@ -13,7 +13,6 @@ from absl import app
 from rl_app.gameplay import GamePlay
 from rl_app.model import Model
 from rl_app.network.network import Receiver, Sender
-from rl_app.network.zmq import ZmqOneTimeReceiver
 from rl_app.util import Timer, put_overwrite
 from scripts.download_model import ENV_TO_FNAME, MODEL_CACHE_DIR
 from tensorpack import *
@@ -22,12 +21,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', type=str, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--action_port', type=int, required=True)
-parser.add_argument('--gameover_port', type=int, required=True)
 parser.add_argument('--n_cpu', default=4, type=int)
 parser.add_argument('--model_fname',
                     type=str,
                     default=None,
                     help='Optional string to specify the model weights')
+parser.add_argument('--time', required=True, type=int)
 
 
 def get_num_actions(env_name):
@@ -37,8 +36,8 @@ def get_num_actions(env_name):
 
 class Agent:
 
-  def __init__(self, env_name, frames_port, action_port, gameover_port, n_cpu,
-               model_fname):
+  def __init__(self, env_name, frames_port, action_port, n_cpu, model_fname,
+               time):
 
     model_fname = model_fname or os.path.join(MODEL_CACHE_DIR,
                                               ENV_TO_FNAME[env_name])
@@ -63,8 +62,9 @@ class Agent:
     self.n_cpu = n_cpu
     self.frames_port = frames_port
     self.action_port = action_port
-    self.gameover_port = gameover_port
     self._gameover_q = queue.Queue(1)
+    self.frames_started = False
+    self.time = time
 
   def start(self):
     self._frames_socket = Receiver(host='0.0.0.0',
@@ -73,18 +73,26 @@ class Agent:
     self._actions_socket = Sender(host='0.0.0.0',
                                   port=self.action_port,
                                   bind=True)
-    self._frames_socket.start_loop(self.record_frame, blocking=False)
+    self._frames_socket.start_loop(
+        self.record_frame,
+        new_connection_callback=self._traffic_frames_started,
+        blocking=False)
     self._actions_socket.start_loop(self._get_action, blocking=False)
-    self._gameover_socket = ZmqOneTimeReceiver(host='*',
-                                               port=self.gameover_port,
-                                               serializer='pickle',
-                                               deserializer='pickle',
-                                               bind=True)
-    self._gameover_socket.start_loop(self._gameover_q.put)
     self._process_thread = Thread(target=self._process)
     self._process_thread.daemon = True
     self._process_thread.start()
-    self._gameover_q.get()
+    start_t = time.time()
+    while time.time() < start_t + self.time:
+      if self.frames_started and self._frames_socket.connected:
+        try:
+          self._gameover_q.get_nowait()
+          break
+        except queue.Empty:
+          pass
+      time.sleep(.5)
+
+  def _traffic_frames_started(self, *args):
+    self.frames_started = True
 
   def _process(self):
     """deques the frames and runs prediction network on them."""
@@ -100,6 +108,10 @@ class Agent:
       # print('Avg agent neural net eval time: %.3f' % agent_timer.time())
 
   def record_frame(self, frame):
+    if frame is None:
+      self._gameover_q.put(1)
+      return
+
     put_overwrite(self._frames_q, frame)
 
   def _get_action(self):
@@ -111,9 +123,9 @@ def main(argv):
   agent = Agent(env_name=args.env_name,
                 frames_port=args.frames_port,
                 action_port=args.action_port,
-                gameover_port=args.gameover_port,
                 n_cpu=args.n_cpu,
-                model_fname=args.model_fname)
+                model_fname=args.model_fname,
+                time=args.time)
   agent.start()
 
 

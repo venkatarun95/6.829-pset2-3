@@ -2,9 +2,9 @@ $setup = <<-SCRIPT
 sudo DEBIAN_FRONTEND=noninteractive apt-get --yes update
 sudo DEBIAN_FRONTEND=noninteractive apt-get --yes install build-essential \
   git python3 python3-pip bridge-utils mahimahi python-opengl cmake \
-  libopenmpi-dev python3-dev zlib1g-dev
+  libopenmpi-dev ffmpeg python3-dev zlib1g-dev
 
-sudo python3 -m pip install gym termcolor tensorflow opencv-python atari-py
+sudo python3 -m pip install gym termcolor tensorflow opencv-python atari-py pyarrow numpy absl-py zmq
 sudo python3 -m pip install --upgrade git+https://github.com/tensorpack/tensorpack.git
 
 # for mahimahi

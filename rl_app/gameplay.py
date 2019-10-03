@@ -1,5 +1,7 @@
 import argparse
 import json
+import subprocess
+import sys
 import os
 import threading
 import time
@@ -21,7 +23,6 @@ parser.add_argument('--env_name', type=str, required=True)
 parser.add_argument('--server_ip', type=str, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--action_port', type=int, required=True)
-parser.add_argument('--gameover_port', type=int, required=True)
 parser.add_argument('--sps', type=int, default=20)
 parser.add_argument('--frameskip', type=int, default=1)
 parser.add_argument('--render', dest='render', action='store_true')
@@ -31,6 +32,9 @@ parser.add_argument('--results_dir',
                     required=True,
                     help='Dump the video results here (optionally video)')
 parser.add_argument('--time', type=int, default=60)
+parser.add_argument('--use_latest_act_as_default',
+                    dest='use_latest_act_as_default',
+                    action='store_true')
 
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
@@ -45,12 +49,12 @@ class GamePlay:
       agent_server_ip,
       frames_port,
       action_port,
-      gameover_port,
       time_limit,
       render=False,
       results_dir=None,
       dump_video=None,
       frameskip=1,
+      use_latest_act_as_default=False,
   ):
     env = gym.make(env_name, frameskip=frameskip, repeat_action_probability=0.)
     if dump_video:
@@ -65,17 +69,17 @@ class GamePlay:
 
     self.sps = sps
     self.results_dir = results_dir
+    os.system('mkdir -p %s' % self.results_dir)
     self._step_sleep_time = 1.0 / sps
     self.server_ip = agent_server_ip
     self.frames_port = frames_port
     self.action_port = action_port
-    self.gameover_port = gameover_port
     self.render = render
     self.env = env
+    self.use_latest_act_as_default = use_latest_act_as_default
     self.lock = threading.Lock()
     self._latest_action = None
     self._frames_q = queue.Queue(1)
-    self._gameover_q = queue.Queue(1)
 
   def start(self):
     self._frames_socket = Sender(host=self.server_ip,
@@ -84,16 +88,21 @@ class GamePlay:
     self._actions_socket = Receiver(host=self.server_ip,
                                     port=self.action_port,
                                     bind=False)
-    self._gameover_socket = ZmqSender(host=self.server_ip,
-                                      port=self.gameover_port,
-                                      serializer='pickle',
-                                      deserializer='pickle',
-                                      bind=False)
     self._frames_socket.start_loop(self.push_frames, blocking=False)
     self._actions_socket.start_loop(self._receive_actions, blocking=False)
+    proc = self._start_ping()
     self._process()
-    self._gameover_socket.send(1)
-    self._gameover_socket.socket.close()
+    if proc.poll() is None:
+      proc.kill()
+
+  def _start_ping(self):
+    proc = subprocess.Popen(
+        'exec ping %s -i 0.2 > %s' %
+        (self.server_ip, os.path.join(self.results_dir, 'ping.txt')),
+        stderr=sys.stderr,
+        stdout=sys.stdout,
+        shell=True)
+    return proc
 
   def _receive_actions(self, act):
     with self.lock:
@@ -136,7 +145,8 @@ class GamePlay:
         print('.', end='', flush=True)
         with self.lock:
           act = self._latest_action
-          self._latest_action = None
+          if not self.use_latest_act_as_default:
+            self._latest_action = None
 
         if act is None:
           num_skipped_actions += 1
@@ -155,6 +165,7 @@ class GamePlay:
       sum_r += r
       n_steps += 1
 
+    put_overwrite(self._frames_q, None)
     print('')
     print('# of steps elapsed: ', n_steps)
     print('# of skipped actions: ', num_skipped_actions)
@@ -170,7 +181,6 @@ class GamePlay:
                lives_remaining=info['ale.lives']))
 
   def _log_results(self, **kwargs):
-    os.system('mkdir -p %s' % self.results_dir)
     with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
       json.dump(kwargs, f, indent=4, sort_keys=True)
 
@@ -183,12 +193,12 @@ def main(argv):
       agent_server_ip=args.server_ip,
       frames_port=args.frames_port,
       action_port=args.action_port,
-      gameover_port=args.gameover_port,
       results_dir=args.results_dir,
       dump_video=args.dump_video,
       time_limit=args.time,
       render=args.render,
       frameskip=args.frameskip,
+      use_latest_act_as_default=args.use_latest_act_as_default,
   )
   game_play.start()
 
