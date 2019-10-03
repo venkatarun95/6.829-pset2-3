@@ -1,0 +1,7 @@
+numpy
+tensorpack
+opencv
+pyarrow
+atari-py
+gym
+absl-py
