@@ -1,6 +1,6 @@
 """
   Example invokation:
-  python3 scripts/run_exp.py --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4 --action_port=10000 --frames_port=10001
+  python3 scripts/run_exp.py --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4 --action_port=10000 --frames_port=10001 --dump_video
 """
 import threading
 import subprocess

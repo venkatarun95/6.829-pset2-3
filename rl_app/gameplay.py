@@ -14,9 +14,14 @@ from absl import app
 from rl_app.atari_wrapper import (FireResetEnv, FrameStack, LimitLength,
                                   MapState)
 from rl_app.network.network import Receiver, Sender
-from rl_app.network.zmq import ZmqSender
-from rl_app.util import Timer, put_overwrite
+from rl_app.util import Clock, put_overwrite
+from rl_app.plt_util import parse_mahimahi_out, parse_ping
 from tensorpack import *
+from collections import namedtuple
+from rl_app.network.serializer import pa_serialize
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.use('Agg')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', type=str, required=True)
@@ -38,6 +43,8 @@ parser.add_argument('--use_latest_act_as_default',
 
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
+GameStat = namedtuple(
+    'GameStat', ['is_skip_action', 'lag_n_frames', 'lag_time', 'frame_size'])
 
 
 class GamePlay:
@@ -56,30 +63,28 @@ class GamePlay:
       frameskip=1,
       use_latest_act_as_default=False,
   ):
-    env = gym.make(env_name, frameskip=frameskip, repeat_action_probability=0.)
-    if dump_video:
-      env = gym.wrappers.Monitor(env,
-                                 results_dir,
-                                 video_callable=lambda _: True,
-                                 force=True)
-    env = FireResetEnv(env)
-    env = MapState(env, lambda im: cv2.resize(im, IMAGE_SIZE))
-    env = FrameStack(env, FRAME_HISTORY)
-    env = LimitLength(env, sps * time_limit)
 
+    self.max_steps = sps * time_limit
     self.sps = sps
+    self.time_limit = time_limit
     self.results_dir = results_dir
     os.system('mkdir -p %s' % self.results_dir)
     self._step_sleep_time = 1.0 / sps
     self.server_ip = agent_server_ip
     self.frames_port = frames_port
     self.action_port = action_port
+    self.frameskip = frameskip
+    self.env_name = env_name
+    self.dump_video = dump_video
     self.render = render
-    self.env = env
     self.use_latest_act_as_default = use_latest_act_as_default
+    if use_latest_act_as_default:
+      raise Exception('Not supported for now..')
     self.lock = threading.Lock()
     self._latest_action = None
     self._frames_q = queue.Queue(1)
+    self._game_stats = []
+    self.env = self._make_env()
 
   def start(self):
     self._frames_socket = Sender(host=self.server_ip,
@@ -95,24 +100,42 @@ class GamePlay:
     if proc.poll() is None:
       proc.kill()
 
+    self._plot_results()
+
+  def _make_env(self, env_number=0):
+    env = gym.make(self.env_name,
+                   frameskip=self.frameskip,
+                   repeat_action_probability=0.)
+    if self.dump_video:
+      env = gym.wrappers.Monitor(env,
+                                 os.path.join(self.results_dir,
+                                              'video_%d' % env_number),
+                                 video_callable=lambda _: True,
+                                 force=True)
+    env = FireResetEnv(env)
+    env = MapState(env, lambda im: cv2.resize(im, IMAGE_SIZE))
+    env = FrameStack(env, FRAME_HISTORY)
+    env = LimitLength(env, self.max_steps)
+    return env
+
   def _start_ping(self):
-    proc = subprocess.Popen(
-        'exec ping %s -i 0.2 > %s' %
-        (self.server_ip, os.path.join(self.results_dir, 'ping.txt')),
-        stderr=sys.stderr,
-        stdout=sys.stdout,
-        shell=True)
+    proc = subprocess.Popen('exec ping %s -w %s -i 0.2 > %s' %
+                            (self.server_ip, self.time_limit + 4,
+                             os.path.join(self.results_dir, 'ping.txt')),
+                            stderr=sys.stderr,
+                            stdout=sys.stdout,
+                            shell=True)
     return proc
 
   def _receive_actions(self, act):
     with self.lock:
-      self._latest_action = act
+      self._latest_action = [time.time(), act]
 
   def push_frames(self):
     return self._frames_q.get()
 
   def _get_default_action(self):
-    return 0
+    return 1
 
   def _encode_obs(self, obs):
     encoded = []
@@ -131,44 +154,74 @@ class GamePlay:
       frames.append(cv2.imdecode(enc_frame, cv2.IMREAD_UNCHANGED))
     return np.stack(frames, axis=-1)
 
+  def _unwrap_action(self, act, step_number):
+    game_stat = GameStat(is_skip_action=False,
+                         lag_n_frames=None,
+                         lag_time=None,
+                         frame_size=None)
+    if act is None:
+      game_stat = game_stat._replace(is_skip_action=True)
+      act = self._get_default_action()
+    else:
+      t, act = act
+      game_stat = game_stat._replace(lag_time=t - act['frame_timestamp'],
+                                     lag_n_frames=step_number -
+                                     act['frame_id'],
+                                     frame_size=act['frame_size'])
+      act = act['action']
+
+    self._game_stats.append(game_stat)
+    return act
+
+  def _wrap_frame(self, step_number, obs):
+    encoded_obs = self._encode_obs(obs)
+    frame = dict(frame_id=step_number,
+                 frame_timestamp=time.time(),
+                 frame_size=sum([sys.getsizeof(img) for img in encoded_obs]),
+                 encoded_obs=encoded_obs)
+    return frame
+
   def _process(self):
     env = self.env
     obs = env.reset()
     sum_r = 0
+    total_games = 0
     n_steps = 0
     isOver = False
-    num_skipped_actions = 0
-    put_overwrite(self._frames_q, self._encode_obs(obs))
+    clock = Clock()
+    clock.reset()
 
-    while not isOver:
-      with Timer() as step_time:
-        print('.', end='', flush=True)
-        with self.lock:
-          act = self._latest_action
-          if not self.use_latest_act_as_default:
-            self._latest_action = None
+    # while not isOver:
+    while n_steps < self.max_steps:
+      put_overwrite(self._frames_q, self._wrap_frame(n_steps, obs))
+      time.sleep(max(0, self._step_sleep_time - clock.time_elapsed()))
+      clock.reset()
 
-        if act is None:
-          num_skipped_actions += 1
-          act = self._get_default_action()
+      with self.lock:
+        act = self._latest_action
+        self._latest_action = None
 
-        obs, r, isOver, info = env.step(act)
+      act = self._unwrap_action(act, n_steps)
+      obs, r, isOver, info = env.step(act)
+      if self.render:
+        env.render()
 
-        put_overwrite(self._frames_q, self._encode_obs(obs))
+      if isOver:
+        total_games += 1
+        env = self._make_env(total_games)
+        obs = env.reset()
 
-        if self.render:
-          env.render()
-
-      if not isOver:
-        time.sleep(max(0, self._step_sleep_time - step_time.time()))
-
+      print('.', end='', flush=True)
       sum_r += r
       n_steps += 1
 
+    n_skipped_actions = sum(map(lambda k: k.is_skip_action, self._game_stats))
     put_overwrite(self._frames_q, None)
     print('')
     print('# of steps elapsed: ', n_steps)
-    print('# of skipped actions: ', num_skipped_actions)
+    print('# of skipped actions: ', n_skipped_actions)
+
+    print('# of games played: ', total_games)
     if info['ale.lives']:
       print('# of lives left: ', info['ale.lives'])
     else:
@@ -177,12 +230,40 @@ class GamePlay:
     self._log_results(
         **dict(n_steps=n_steps,
                total_score=sum_r,
-               n_skipped_actions=num_skipped_actions,
-               lives_remaining=info['ale.lives']))
+               lives_remaining=info['ale.lives'],
+               n_skipped_actions=n_skipped_actions,
+               total_games=total_games))
 
   def _log_results(self, **kwargs):
     with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
       json.dump(kwargs, f, indent=4, sort_keys=True)
+
+    with open(os.path.join(self.results_dir, 'game_stats.json'), 'w') as f:
+      game_stats = list(
+          map(lambda game_stat: game_stat._asdict(), self._game_stats))
+      json.dump(game_stats, f, indent=2, sort_keys=True)
+
+  def _plot_results(self):
+    ping_data = parse_ping(os.path.join(self.results_dir, 'ping.txt'))
+    plt.figure()
+    plt.plot(ping_data)
+    plt.ylabel('milli seconds')
+    plt.savefig(fname=os.path.join(self.results_dir, 'ping.png'))
+
+    # plt.figure()
+    # plt.plot(*parse_mahimahi_out(os.path.join(self.results_dir,
+    #                                           'mm_uplink.log'),
+    #                              'Capacity',
+    #                              ms_per_bin=200),
+    #          label='Capacity')
+    # plt.plot(*parse_mahimahi_out(os.path.join(self.results_dir,
+    #                                           'mm_uplink.log'),
+    #                              'Ingress',
+    #                              ms_per_bin=200),
+    #          label='Ingress')
+    # plt.xlabel('sec')
+    # plt.ylabel('Mbps')
+    # plt.savefig(fname=os.path.join(self.results_dir, 'throughput.png'))
 
 
 def main(argv):

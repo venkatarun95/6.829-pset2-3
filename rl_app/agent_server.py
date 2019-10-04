@@ -11,7 +11,7 @@ import queue
 import tensorflow as tf
 from absl import app
 from rl_app.gameplay import GamePlay
-from rl_app.model import Model
+from rl_app.model import Model, STATE_SHAPE, FRAME_HISTORY
 from rl_app.network.network import Receiver, Sender
 from rl_app.util import Timer, put_overwrite
 from scripts.download_model import ENV_TO_FNAME, MODEL_CACHE_DIR
@@ -67,6 +67,7 @@ class Agent:
     self.time = time
 
   def start(self):
+    self._warmup()
     self._frames_socket = Receiver(host='0.0.0.0',
                                    port=self.frames_port,
                                    bind=True)
@@ -77,7 +78,7 @@ class Agent:
         self.record_frame,
         new_connection_callback=self._traffic_frames_started,
         blocking=False)
-    self._actions_socket.start_loop(self._get_action, blocking=False)
+    self._actions_socket.start_loop(self._put_action, blocking=False)
     self._process_thread = Thread(target=self._process)
     self._process_thread.daemon = True
     self._process_thread.start()
@@ -91,18 +92,33 @@ class Agent:
           pass
       time.sleep(.5)
 
+  def _warmup(self):
+    # warmup tensorflow
+    s = np.zeros(((1, ) + STATE_SHAPE + (FRAME_HISTORY, )), dtype=np.float32)
+    self.pred(s)[0][0].argmax()
+
   def _traffic_frames_started(self, *args):
     self.frames_started = True
+
+  def _wrap_action(self, act, frame_metadata):
+    act = dict(action=act, **frame_metadata)
+    return act
+
+  def _unwrap_frame(self, frame):
+    obs = GamePlay.decode_obs(frame['encoded_obs'])
+    del frame['encoded_obs']
+    return obs, frame
 
   def _process(self):
     """deques the frames and runs prediction network on them."""
     while True:
-      s = GamePlay.decode_obs(self._frames_q.get())
+      frame = self._frames_q.get()
+      s, frame_metadata = self._unwrap_frame(frame)
       assert isinstance(s, np.ndarray)
       with Timer() as agent_timer:
         s = np.expand_dims(s, 0)  # batch
         act = self.pred(s)[0][0].argmax()
-      put_overwrite(self._actions_q, act)
+      put_overwrite(self._actions_q, self._wrap_action(act, frame_metadata))
 
       print('.', end='', flush=True)
       # print('Avg agent neural net eval time: %.3f' % agent_timer.time())
@@ -111,10 +127,9 @@ class Agent:
     if frame is None:
       self._gameover_q.put(1)
       return
-
     put_overwrite(self._frames_q, frame)
 
-  def _get_action(self):
+  def _put_action(self):
     return self._actions_q.get()
 
 
