@@ -1,7 +1,10 @@
 import socket
 from rl_app.network.serializer import get_serializer, get_deserializer, int_from_bytes, int_to_bytes
+from rl_app.util import Timer
 import time
 from threading import Thread
+
+READ_SIZE = 8192
 
 
 class Receiver:
@@ -11,7 +14,8 @@ class Receiver:
                port=None,
                bind=True,
                serializer='pyarrow',
-               deserializer='pyarrow'):
+               deserializer='pyarrow',
+               verbose=False):
     self._thread = None
     self.host = host
     self.port = port
@@ -19,8 +23,12 @@ class Receiver:
     self._deserializer = get_deserializer(deserializer)
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+    self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
     self.bind = bind
     self.connected = False
+    self.verbose = verbose
     if bind:
       self.socket.bind((host, port))
     else:
@@ -75,40 +83,32 @@ class Receiver:
     except ConnectionResetError:
       self.connected = False
 
-  def _read_header(self, conn, msg):
-    while len(msg) < 4:
-      data = conn.recv(1024)
+  def _read_n_bytes(self, conn, n_bytes):
+    msg = bytearray()
+    while len(msg) < n_bytes:
+      data = conn.recv(min(READ_SIZE, n_bytes))
       if not data:
         raise ConnectionError
       msg.extend(data)
+    return msg
 
-    assert len(msg) >= 4
-    header = msg[:4]
-    msg = msg[4:]
-    return int_from_bytes(header), msg
+  def _read_header(self, conn):
+    header = self._read_n_bytes(conn, 4)
+    return int_from_bytes(header)
 
   def _loop(self, conn, handler):
     # whether to read the header in the
     # next iteration or not.
-    read_header = True
-    msg = bytearray()
-    while True:
-      if read_header:
-        try:
-          l, msg = self._read_header(conn, msg)
-        except ConnectionError:
-          return
-        read_header = False
-
-      if l <= len(msg):
-        handler(self._deserializer(msg[:l]))
-        msg = msg[l:]
-        read_header = True
-      else:
-        data = conn.recv(1024)
-        if not data:
-          return
-        msg.extend(data)
+    try:
+      while True:
+        with Timer() as timer:
+          l = self._read_header(conn)
+          msg = self._read_n_bytes(conn, l)
+          handler(self._deserializer(msg))
+        if self.verbose:
+          print('cycle time: %.2f' % timer.time())
+    except ConnectionError:
+      return
 
 
 class Sender(Receiver):

@@ -2,11 +2,16 @@
   Example invokation:
   python3 scripts/run_exp.py --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4 --action_port=10000 --frames_port=10001 --dump_video
 """
-import threading
-import subprocess
 import argparse
 import os
+import subprocess
 import sys
+import threading
+
+from rl_app.plt_util import parse_mahimahi_out, parse_ping
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.use('Agg')
 
 INF_TRACE = 'mm_traces/100mbps.log'
 MAHIMAHI_BASE = '100.64.0.4'
@@ -116,7 +121,7 @@ def get_server_cmd(args):
 def get_client_cmd(args, disable_mahimahi):
   dump_dir = os.path.join(args.results_dir, args.name, 'game_results')
   cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
-  cmd += 'python3 rl_app/gameplay.py -- --frameskip=3 --sps=30 --env_name=%s' % args.env_name
+  cmd += 'python3 rl_app/gameplay.py -- --frameskip=3 --sps=90 --env_name=%s' % args.env_name
   if disable_mahimahi:
     cmd += ' --server_ip=127.0.0.1'
   else:
@@ -133,6 +138,24 @@ def get_client_cmd(args, disable_mahimahi):
     cmd += ' '
     cmd += (' '.join(args.remaining_args))
   return cmd
+
+
+def plot_mahimahi(args):
+  plt.figure()
+  plt.plot(*parse_mahimahi_out(os.path.join(args.results_dir, args.name,
+                                            'mm_uplink.log'),
+                               'Capacity',
+                               ms_per_bin=200),
+           label='Capacity')
+  plt.plot(*parse_mahimahi_out(os.path.join(args.results_dir, args.name,
+                                            'mm_uplink.log'),
+                               'Ingress',
+                               ms_per_bin=200),
+           label='Ingress')
+  plt.xlabel('sec')
+  plt.ylabel('Mbps')
+  plt.savefig(
+      fname=os.path.join(args.results_dir, args.name, 'throughput.png'))
 
 
 def main(argv):
@@ -157,6 +180,8 @@ def main(argv):
   server_cmd = get_server_cmd(args)
   process = subprocess_cmd(server_cmd, dry_run=args.dry_run)
   ret = run_cmd(cli_cmd, blocking=True, dry_run=args.dry_run)
+  if ret == 0 and not args.dry_run:
+    plot_mahimahi(args)
 
   ret2 = 0
   if not args.dry_run:

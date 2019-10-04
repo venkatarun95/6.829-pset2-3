@@ -2,7 +2,7 @@ import queue
 import time
 
 
-def put_overwrite(q, item):
+def put_overwrite(q, item, key=''):
   """Put item into queue without blocking.
     If full, remove an item out of the queue.
     Guaranteed not to block."""

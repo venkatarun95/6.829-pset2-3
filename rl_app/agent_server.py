@@ -27,6 +27,7 @@ parser.add_argument('--model_fname',
                     default=None,
                     help='Optional string to specify the model weights')
 parser.add_argument('--time', required=True, type=int)
+parser.add_argument('--verbose', dest='verbose', action='store_true')
 
 
 def get_num_actions(env_name):
@@ -36,8 +37,14 @@ def get_num_actions(env_name):
 
 class Agent:
 
-  def __init__(self, env_name, frames_port, action_port, n_cpu, model_fname,
-               time):
+  def __init__(self,
+               env_name,
+               frames_port,
+               action_port,
+               n_cpu,
+               model_fname,
+               time,
+               verbose=False):
 
     model_fname = model_fname or os.path.join(MODEL_CACHE_DIR,
                                               ENV_TO_FNAME[env_name])
@@ -58,6 +65,8 @@ class Agent:
                                       inter_op_parallelism_threads=n_cpu))))
 
     self._frames_q = queue.Queue(1)
+    # self._latest_frame = None
+    self.verbose = verbose
     self._actions_q = queue.Queue(1)
     self.n_cpu = n_cpu
     self.frames_port = frames_port
@@ -65,12 +74,14 @@ class Agent:
     self._gameover_q = queue.Queue(1)
     self.frames_started = False
     self.time = time
+    self.lock = Lock()
 
   def start(self):
     self._warmup()
     self._frames_socket = Receiver(host='0.0.0.0',
                                    port=self.frames_port,
-                                   bind=True)
+                                   bind=True,
+                                   verbose=self.verbose)
     self._actions_socket = Sender(host='0.0.0.0',
                                   port=self.action_port,
                                   bind=True)
@@ -112,22 +123,27 @@ class Agent:
   def _process(self):
     """deques the frames and runs prediction network on them."""
     while True:
-      frame = self._frames_q.get()
-      s, frame_metadata = self._unwrap_frame(frame)
-      assert isinstance(s, np.ndarray)
+      with Timer() as data_timer:
+        frame = self._frames_q.get()
+
       with Timer() as agent_timer:
+        s, frame_metadata = self._unwrap_frame(frame)
         s = np.expand_dims(s, 0)  # batch
         act = self.pred(s)[0][0].argmax()
-      put_overwrite(self._actions_q, self._wrap_action(act, frame_metadata))
+        put_overwrite(self._actions_q, self._wrap_action(act, frame_metadata))
 
-      print('.', end='', flush=True)
-      # print('Avg agent neural net eval time: %.3f' % agent_timer.time())
+      if self.verbose:
+        print('.', end='', flush=True)
+        print('Avg data wait time: %.3f' % data_timer.time())
+        print('Avg agent neural net eval time: %.3f' % agent_timer.time())
 
   def record_frame(self, frame):
     if frame is None:
       self._gameover_q.put(1)
       return
-    put_overwrite(self._frames_q, frame)
+    # with self.lock:
+    #   self._latest_frame = frame
+    put_overwrite(self._frames_q, frame, key='frame_q')
 
   def _put_action(self):
     return self._actions_q.get()
@@ -140,7 +156,8 @@ def main(argv):
                 action_port=args.action_port,
                 n_cpu=args.n_cpu,
                 model_fname=args.model_fname,
-                time=args.time)
+                time=args.time,
+                verbose=args.verbose)
   agent.start()
 
 

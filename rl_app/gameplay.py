@@ -84,7 +84,8 @@ class GamePlay:
     self._latest_action = None
     self._frames_q = queue.Queue(1)
     self._game_stats = []
-    self.env = self._make_env()
+    self.game_id = None
+    self.skip_count = None
 
   def start(self):
     self._frames_socket = Sender(host=self.server_ip,
@@ -103,9 +104,7 @@ class GamePlay:
     self._plot_results()
 
   def _make_env(self, env_number=0):
-    env = gym.make(self.env_name,
-                   frameskip=self.frameskip,
-                   repeat_action_probability=0.)
+    env = gym.make(self.env_name, frameskip=1, repeat_action_probability=0.)
     if self.dump_video:
       env = gym.wrappers.Monitor(env,
                                  os.path.join(self.results_dir,
@@ -134,9 +133,6 @@ class GamePlay:
   def push_frames(self):
     return self._frames_q.get()
 
-  def _get_default_action(self):
-    return 1
-
   def _encode_obs(self, obs):
     encoded = []
     for i in range(FRAME_HISTORY):
@@ -154,15 +150,33 @@ class GamePlay:
       frames.append(cv2.imdecode(enc_frame, cv2.IMREAD_UNCHANGED))
     return np.stack(frames, axis=-1)
 
+  def _get_noop_action(self):
+    return 1
+
+  def _get_default_action(self):
+    if self.skip_count < self.frameskip:
+      act = self._prev_action
+    else:
+      act = self._get_noop_action()
+    return act
+
   def _unwrap_action(self, act, step_number):
     game_stat = GameStat(is_skip_action=False,
                          lag_n_frames=None,
                          lag_time=None,
                          frame_size=None)
+
+    # drop actions destined for the previous game.
+    if act:
+      if act[1]['game_id'] < self.game_id:
+        act = None
+
     if act is None:
       game_stat = game_stat._replace(is_skip_action=True)
       act = self._get_default_action()
+      self.skip_count += 1
     else:
+      self.skip_count = 0
       t, act = act
       game_stat = game_stat._replace(lag_time=t - act['frame_timestamp'],
                                      lag_n_frames=step_number -
@@ -170,22 +184,33 @@ class GamePlay:
                                      frame_size=act['frame_size'])
       act = act['action']
 
+    self._prev_action = act
     self._game_stats.append(game_stat)
     return act
+
+  def _new_game(self):
+    if self.game_id is None:
+      self.game_id = 0
+    else:
+      self.game_id += 1
+    self.skip_count = 0
+    self._prev_action = self._get_noop_action()
+    env = self._make_env(self.game_id)
+    obs = env.reset()
+    return env, obs
 
   def _wrap_frame(self, step_number, obs):
     encoded_obs = self._encode_obs(obs)
     frame = dict(frame_id=step_number,
                  frame_timestamp=time.time(),
                  frame_size=sum([sys.getsizeof(img) for img in encoded_obs]),
-                 encoded_obs=encoded_obs)
+                 encoded_obs=encoded_obs,
+                 game_id=self.game_id)
     return frame
 
   def _process(self):
-    env = self.env
-    obs = env.reset()
+    env, obs = self._new_game()
     sum_r = 0
-    total_games = 0
     n_steps = 0
     isOver = False
     clock = Clock()
@@ -206,10 +231,8 @@ class GamePlay:
       if self.render:
         env.render()
 
-      if isOver:
-        total_games += 1
-        env = self._make_env(total_games)
-        obs = env.reset()
+      if isOver and n_steps < self.max_steps - 1:
+        env, obs = self._new_game()
 
       print('.', end='', flush=True)
       sum_r += r
@@ -221,7 +244,7 @@ class GamePlay:
     print('# of steps elapsed: ', n_steps)
     print('# of skipped actions: ', n_skipped_actions)
 
-    print('# of games played: ', total_games)
+    print('# of games played: ', self.game_id + 1)
     if info['ale.lives']:
       print('# of lives left: ', info['ale.lives'])
     else:
@@ -232,7 +255,7 @@ class GamePlay:
                total_score=sum_r,
                lives_remaining=info['ale.lives'],
                n_skipped_actions=n_skipped_actions,
-               total_games=total_games))
+               total_games=self.game_id + 1))
 
   def _log_results(self, **kwargs):
     with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
@@ -249,21 +272,6 @@ class GamePlay:
     plt.plot(ping_data)
     plt.ylabel('milli seconds')
     plt.savefig(fname=os.path.join(self.results_dir, 'ping.png'))
-
-    # plt.figure()
-    # plt.plot(*parse_mahimahi_out(os.path.join(self.results_dir,
-    #                                           'mm_uplink.log'),
-    #                              'Capacity',
-    #                              ms_per_bin=200),
-    #          label='Capacity')
-    # plt.plot(*parse_mahimahi_out(os.path.join(self.results_dir,
-    #                                           'mm_uplink.log'),
-    #                              'Ingress',
-    #                              ms_per_bin=200),
-    #          label='Ingress')
-    # plt.xlabel('sec')
-    # plt.ylabel('Mbps')
-    # plt.savefig(fname=os.path.join(self.results_dir, 'throughput.png'))
 
 
 def main(argv):
