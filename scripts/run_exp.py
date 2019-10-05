@@ -40,8 +40,9 @@ parser.add_argument('-t',
                     help='Bottleneck Throughput in Mbps.')
 parser.add_argument('--queue_size_factor',
                     type=float,
-                    default=2.,
+                    default=None,
                     help='queue size = this factor * BDP_min')
+parser.add_argument('--queue_size', type=int, default=10)
 parser.add_argument('--env_name', type=str, default='Breakout-v0')
 parser.add_argument('--model_cache_dir',
                     type=str,
@@ -92,6 +93,8 @@ def subprocess_cmd(command, dry_run=False):
 def get_mahimahi_stub(args):
   if args.rtt % 2 != 0:
     raise Exception('Specify even number for rtt value')
+  if args.queue_size_factor is not None:
+    raise Exception('queue_size-factor has been removed')
 
   thr_file = './mm_traces/%smbps.log' % args.thr
   if not os.path.isfile(thr_file):
@@ -102,15 +105,14 @@ def get_mahimahi_stub(args):
   uplink_log = os.path.join(args.results_dir, args.name, 'mm_uplink.log')
   downlink_log = os.path.join(args.results_dir, args.name, 'mm_downlink.log')
 
-  cmd = 'mm-delay {delay} mm-link --uplink-queue=droptail --uplink-queue-args="bytes={queue_size}" \
+  cmd = 'mm-delay {delay} mm-link --uplink-queue=droptail --uplink-queue-args="packets={queue_size}" \
   {uplink_thr} {downlink_thr} --uplink-log={uplink_log} --downlink-log={downlink_log}'.format(
       delay=int(args.rtt / 2),
       uplink_thr=thr_file,
       downlink_thr=INF_TRACE,
       uplink_log=uplink_log,
       downlink_log=downlink_log,
-      queue_size=int(args.queue_size_factor * float(args.thr) * args.rtt *
-                     1000))
+      queue_size=args.queue_size)
   cmd += ' <<EOF\n{cmd}\nEOF'
   return cmd
 

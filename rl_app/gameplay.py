@@ -138,6 +138,10 @@ class GamePlay:
         self._latest_action = [time.time(), act]
 
   def push_frames(self):
+    try:
+      return self._frames_q.get_nowait()
+    except queue.Empty:
+      print('App limited!...')
     return self._frames_q.get()
 
   def _encode_obs(self, obs):

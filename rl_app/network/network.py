@@ -26,7 +26,7 @@ class Receiver:
     self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 7000)
-    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 50000)
+    # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 0000)
 
     self.bind = bind
     self.connected = False
@@ -128,4 +128,9 @@ class Sender(Receiver):
       data = handler()
       msg = self._serializer(data)
       msg = self._add_header(msg)
-      conn.sendall(msg)
+      # conn.sendall(msg)
+      sent = 0
+      while sent < len(msg):
+        sent += conn.send(msg[sent:])
+
+      assert sent == len(msg)

@@ -18,11 +18,11 @@ echo "Now running...."
 
 echo "python3 scripts/run_exp.py -n=$name --model_cache_dir=/home/ubuntu/model_cache_dir/ \
 --results_dir=/home/ubuntu/results/ --rtt=$rtt --time=$time --thr=$thr --dump_video \
---action_port=${action_port} --frames_port=${frames_port} --queue_size_factor=$frac $rest"
+--action_port=${action_port} --frames_port=${frames_port} --queue_size=$frac $rest"
 
 python3 scripts/run_exp.py -n=$name --model_cache_dir=/home/ubuntu/model_cache_dir/ \
 --results_dir=/home/ubuntu/results/ --rtt=$rtt --time=$time --thr=$thr --dump_video \
---action_port=${action_port} --frames_port=${frames_port} --queue_size_factor=$frac $rest
+--action_port=${action_port} --frames_port=${frames_port} --queue_size=$frac $rest
 }
 
 time=180
