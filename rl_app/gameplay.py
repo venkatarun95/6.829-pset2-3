@@ -40,9 +40,10 @@ parser.add_argument('--time', type=int, default=60)
 parser.add_argument('--use_latest_act_as_default',
                     dest='use_latest_act_as_default',
                     action='store_true')
-parser.add_argument('--streaming_setting',
-                    action='store_true',
-                    dest='streaming_setting')
+parser.add_argument('--use_iperf', dest='use_iperf', action='store_true')
+parser.add_argument('--use_', dest='use_iperf', action='store_true')
+parser.add_argument('--verbose', dest='verbose', action='store_true')
+
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
 GameStat = namedtuple(
@@ -58,17 +59,17 @@ class GamePlay:
                frames_port,
                action_port,
                time_limit,
-               streaming_setting,
                render=False,
                results_dir=None,
                dump_video=None,
                frameskip=1,
-               use_latest_act_as_default=False):
+               use_latest_act_as_default=False,
+               use_iperf=False,
+               verbose=False):
 
     self.max_steps = sps * time_limit
     self.sps = sps
     self.time_limit = time_limit
-    self.streaming_setting = streaming_setting
     self.results_dir = results_dir
     os.system('mkdir -p %s' % self.results_dir)
     self._step_sleep_time = 1.0 / sps
@@ -84,28 +85,37 @@ class GamePlay:
       raise Exception('Not supported for now..')
     self.lock = threading.Lock()
     self._latest_action = None
-    if self.streaming_setting:
-      self._frames_q = queue.Queue()
-      self._action_q = queue.Queue()
-    else:
-      self._frames_q = queue.Queue(1)
+    self._frames_q = queue.Queue(1)
     self._game_stats = []
     self.game_id = None
     self.skip_count = None
+    self.verbose = verbose
+    self.use_iperf = use_iperf
 
   def start(self):
     self._frames_socket = Sender(host=self.server_ip,
                                  port=self.frames_port,
-                                 bind=False)
+                                 bind=False,
+                                 verbose=self.verbose)
     self._actions_socket = Receiver(host=self.server_ip,
                                     port=self.action_port,
-                                    bind=False)
+                                    bind=False,
+                                    verbose=self.verbose)
     self._frames_socket.start_loop(self.push_frames, blocking=False)
     self._actions_socket.start_loop(self._receive_actions, blocking=False)
     proc = self._start_ping()
+    self._start_cwnd_monitor()
+    if self.use_iperf:
+      proc2 = self._start_iperf_client()
+
     self._process()
+
     if proc.poll() is None:
       proc.kill()
+
+    if self.use_iperf:
+      if proc2.poll() is None:
+        proc2.kill()
 
     self._plot_results()
 
@@ -121,6 +131,14 @@ class GamePlay:
     env = FrameStack(env, FRAME_HISTORY)
     return env
 
+  def _start_iperf_client(self):
+    proc = subprocess.Popen('exec iperf3 -c %s -t %s' %
+                            (self.server_ip, self.time_limit),
+                            stderr=sys.stderr,
+                            stdout=sys.stdout,
+                            shell=True)
+    return proc
+
   def _start_ping(self):
     proc = subprocess.Popen('exec ping %s -w %s -i 0.2 > %s' %
                             (self.server_ip, self.time_limit + 4,
@@ -130,12 +148,23 @@ class GamePlay:
                             shell=True)
     return proc
 
+  def _start_cwnd_monitor(self):
+
+    def _collect_cwnd():
+      while True:
+        cwnd = self._frames_socket.get_cwnd()
+        with self.lock:
+          self.cwnds.append([time.time(), cwnd])
+        time.sleep(.250)
+
+    self.cwnds = []
+    self._cwnd_thread = threading.Thread(target=_collect_cwnd)
+    self._cwnd_thread.daemon = True
+    self._cwnd_thread.start()
+
   def _receive_actions(self, act):
-    if self.streaming_setting:
-      self._action_q.put([time.time(), act])
-    else:
-      with self.lock:
-        self._latest_action = [time.time(), act]
+    with self.lock:
+      self._latest_action = [time.time(), act]
 
   def push_frames(self):
     try:
@@ -230,33 +259,19 @@ class GamePlay:
 
     # while not isOver:
     while n_steps < self.max_steps:
-      if self.streaming_setting:
-        self._frames_q.put(self._wrap_frame(n_steps, obs))
-      else:
-        put_overwrite(self._frames_q, self._wrap_frame(n_steps, obs))
+      put_overwrite(self._frames_q, self._wrap_frame(n_steps, obs))
 
-      if not self.streaming_setting:
-        t = self._step_sleep_time - clock.time_elapsed()
-        if -t > 1e-3:
-          if not new_game_last_step:
-            print('sps too high for the current gameserver.... %.3f' % t)
-        else:
-          time.sleep(max(0, t))
-        clock.reset()
-
-      if self.streaming_setting:
-        if clock.time_elapsed() >= self.time_limit:
-          break
-        else:
-          try:
-            act = self._action_q.get(timeout=self.time_limit -
-                                     clock.time_elapsed())
-          except queue.Empty:
-            break
+      t = self._step_sleep_time - clock.time_elapsed()
+      if -t > 1e-3:
+        if not new_game_last_step:
+          print('sps too high for the current gameserver.... %.3f' % t)
       else:
-        with self.lock:
-          act = self._latest_action
-          self._latest_action = None
+        time.sleep(max(0, t))
+      clock.reset()
+
+      with self.lock:
+        act = self._latest_action
+        self._latest_action = None
 
       act = self._unwrap_action(act, n_steps)
       obs, r, isOver, info = env.step(act)
@@ -293,6 +308,12 @@ class GamePlay:
                total_games=self.game_id + 1))
 
   def _log_results(self, **kwargs):
+    with open(os.path.join(self.results_dir, 'cwnd.json'), 'w') as f:
+      with self.lock:
+        l = list(self.cwnds)
+      if l:
+        json.dump(l, f, indent=2, sort_keys=True)
+
     with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
       json.dump(kwargs, f, indent=4, sort_keys=True)
 
@@ -307,6 +328,19 @@ class GamePlay:
     plt.plot(ping_data)
     plt.ylabel('milli seconds')
     plt.savefig(fname=os.path.join(self.results_dir, 'ping.png'))
+
+    with open(os.path.join(self.results_dir, 'cwnd.json'), 'r') as f:
+      l = json.load(f)
+
+    if l:
+      times = [i[0] for i in l]
+      y = [i[1] for i in l]
+      times = [t - times[0] for t in times]
+      plt.figure()
+      plt.plot(times, y)
+      plt.xlabel('seconds')
+      plt.ylabel('cwnd')
+      plt.savefig(fname=os.path.join(self.results_dir, 'cwnd.png'))
 
 
 def main(argv):
@@ -323,7 +357,8 @@ def main(argv):
       render=args.render,
       frameskip=args.frameskip,
       use_latest_act_as_default=args.use_latest_act_as_default,
-      streaming_setting=args.streaming_setting)
+      use_iperf=args.use_iperf,
+      verbose=args.verbose)
   game_play.start()
 
 
