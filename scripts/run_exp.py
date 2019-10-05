@@ -53,9 +53,6 @@ parser.add_argument('--disable_mahimahi',
 parser.add_argument('--dry_run', dest='dry_run', action='store_true')
 parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
-parser.add_argument('--streaming_setting',
-                    action='store_true',
-                    dest='streaming_setting')
 parser.add_argument('--use_iperf', dest='use_iperf', action='store_true')
 parser.add_argument('remaining_args', nargs='*')
 args = parser.parse_args()
@@ -124,8 +121,6 @@ def get_server_cmd(args):
   cmd += ' --frames_port=%d --action_port=%d --model_fname=%s/%s.npz' % (
       args.frames_port, args.action_port, args.model_cache_dir, args.env_name)
   cmd += ' --time=%d' % (args.time + 20)
-  if args.streaming_setting:
-    cmd += ' --streaming_setting'
   return cmd
 
 
@@ -145,8 +140,6 @@ def get_client_cmd(args, disable_mahimahi):
     cmd += ' --render'
   if args.dump_video:
     cmd += ' --dump_video'
-  if args.streaming_setting:
-    cmd += ' --streaming_setting'
   if args.use_iperf:
     cmd += ' --use_iperf'
 

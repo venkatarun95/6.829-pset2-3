@@ -89,6 +89,12 @@ class Receiver:
     except ConnectionResetError:
       self.connected = False
 
+  def get_cwnd(self):
+    fmt = "B" * 7 + "I" * 24  #+ "Q" * 4 + "I" * 6 + "Q" * 3
+    tcp_info = struct.unpack(
+        fmt, self.socket.getsockopt(socket.IPPROTO_TCP, socket.TCP_INFO, 104))
+    return int(tcp_info[25] * tcp_info[20])
+
   def _read_n_bytes(self, conn, n_bytes):
     msg = bytearray()
     while len(msg) < n_bytes:
@@ -130,13 +136,6 @@ class Sender(Receiver):
   def _add_header(self, msg):
     header = int_to_bytes(len(msg))
     return header + msg
-
-  def getTCPInfo(self, s):
-    fmt = "B" * 7 + "I" * 24 + "Q" * 4 + "I" * 6 + "Q" * 3
-    x = struct.unpack(fmt,
-                      s.getsockopt(socket.IPPROTO_TCP, socket.TCP_INFO, 184))
-    # print('cwnd estimate: ', tcp_info[25] * tcp_info[20])
-    return x
 
   def _get_data_not_sent(self, fno):
     buf = array.array('i', [-1])
