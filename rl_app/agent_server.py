@@ -27,6 +27,9 @@ parser.add_argument('--model_fname',
                     default=None,
                     help='Optional string to specify the model weights')
 parser.add_argument('--time', required=True, type=int)
+parser.add_argument('--streaming_setting',
+                    action='store_true',
+                    dest='streaming_setting')
 parser.add_argument('--verbose', dest='verbose', action='store_true')
 
 
@@ -37,14 +40,8 @@ def get_num_actions(env_name):
 
 class Agent:
 
-  def __init__(self,
-               env_name,
-               frames_port,
-               action_port,
-               n_cpu,
-               model_fname,
-               time,
-               verbose=False):
+  def __init__(self, env_name, frames_port, action_port, n_cpu, model_fname,
+               time, streaming_setting, verbose):
 
     model_fname = model_fname or os.path.join(MODEL_CACHE_DIR,
                                               ENV_TO_FNAME[env_name])
@@ -64,10 +61,14 @@ class Agent:
                 config=tf.ConfigProto(intra_op_parallelism_threads=n_cpu,
                                       inter_op_parallelism_threads=n_cpu))))
 
-    self._frames_q = queue.Queue(1)
-    # self._latest_frame = None
+    self.streaming_setting = streaming_setting
     self.verbose = verbose
-    self._actions_q = queue.Queue(1)
+    if self.streaming_setting:
+      self._actions_q = queue.Queue()
+      self._frames_q = queue.Queue()
+    else:
+      self._actions_q = queue.Queue(1)
+      self._frames_q = queue.Queue(1)
     self.n_cpu = n_cpu
     self.frames_port = frames_port
     self.action_port = action_port
@@ -94,7 +95,7 @@ class Agent:
     self._process_thread.daemon = True
     self._process_thread.start()
     start_t = time.time()
-    while time.time() < start_t + self.time:
+    while time.time() < start_t + self.time + 5:
       if self.frames_started and self._frames_socket.connected:
         try:
           self._gameover_q.get_nowait()
@@ -102,6 +103,7 @@ class Agent:
         except queue.Empty:
           pass
       time.sleep(.5)
+    print('Agent server exiting...')
 
   def _warmup(self):
     # warmup tensorflow
@@ -130,10 +132,14 @@ class Agent:
         s, frame_metadata = self._unwrap_frame(frame)
         s = np.expand_dims(s, 0)  # batch
         act = self.pred(s)[0][0].argmax()
-        put_overwrite(self._actions_q, self._wrap_action(act, frame_metadata))
+        if self.streaming_setting:
+          self._actions_q.put(self._wrap_action(act, frame_metadata))
+        else:
+          put_overwrite(self._actions_q,
+                        self._wrap_action(act, frame_metadata))
 
+      print('.', end='', flush=True)
       if self.verbose:
-        print('.', end='', flush=True)
         print('Avg data wait time: %.3f' % data_timer.time())
         print('Avg agent neural net eval time: %.3f' % agent_timer.time())
 
@@ -141,9 +147,11 @@ class Agent:
     if frame is None:
       self._gameover_q.put(1)
       return
-    # with self.lock:
-    #   self._latest_frame = frame
-    put_overwrite(self._frames_q, frame, key='frame_q')
+
+    if self.streaming_setting:
+      self._frames_q.put(frame)
+    else:
+      put_overwrite(self._frames_q, frame, key='frame_q')
 
   def _put_action(self):
     return self._actions_q.get()
@@ -157,7 +165,8 @@ def main(argv):
                 n_cpu=args.n_cpu,
                 model_fname=args.model_fname,
                 time=args.time,
-                verbose=args.verbose)
+                verbose=args.verbose,
+                streaming_setting=args.streaming_setting)
   agent.start()
 
 

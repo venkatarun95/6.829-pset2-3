@@ -6,7 +6,6 @@ def put_overwrite(q, item, key=''):
   """Put item into queue without blocking.
     If full, remove an item out of the queue.
     Guaranteed not to block."""
-  assert q.maxsize > 0
   try:
     q.put_nowait(item)
   except queue.Full:

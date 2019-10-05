@@ -12,7 +12,7 @@ import numpy as np
 import queue
 from absl import app
 from rl_app.atari_wrapper import (FireResetEnv, FrameStack, LimitLength,
-                                  MapState)
+                                  MapState, Monitor)
 from rl_app.network.network import Receiver, Sender
 from rl_app.util import Clock, put_overwrite
 from rl_app.plt_util import parse_mahimahi_out, parse_ping
@@ -29,7 +29,7 @@ parser.add_argument('--server_ip', type=str, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--sps', type=int, default=20)
-parser.add_argument('--frameskip', type=int, default=1)
+parser.add_argument('--frameskip', type=int, default=3)
 parser.add_argument('--render', dest='render', action='store_true')
 parser.add_argument('--dump_video', dest='dump_video', action='store_true')
 parser.add_argument('--results_dir',
@@ -40,7 +40,9 @@ parser.add_argument('--time', type=int, default=60)
 parser.add_argument('--use_latest_act_as_default',
                     dest='use_latest_act_as_default',
                     action='store_true')
-
+parser.add_argument('--streaming_setting',
+                    action='store_true',
+                    dest='streaming_setting')
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
 GameStat = namedtuple(
@@ -49,24 +51,24 @@ GameStat = namedtuple(
 
 class GamePlay:
 
-  def __init__(
-      self,
-      env_name,
-      sps,
-      agent_server_ip,
-      frames_port,
-      action_port,
-      time_limit,
-      render=False,
-      results_dir=None,
-      dump_video=None,
-      frameskip=1,
-      use_latest_act_as_default=False,
-  ):
+  def __init__(self,
+               env_name,
+               sps,
+               agent_server_ip,
+               frames_port,
+               action_port,
+               time_limit,
+               streaming_setting,
+               render=False,
+               results_dir=None,
+               dump_video=None,
+               frameskip=1,
+               use_latest_act_as_default=False):
 
     self.max_steps = sps * time_limit
     self.sps = sps
     self.time_limit = time_limit
+    self.streaming_setting = streaming_setting
     self.results_dir = results_dir
     os.system('mkdir -p %s' % self.results_dir)
     self._step_sleep_time = 1.0 / sps
@@ -82,7 +84,11 @@ class GamePlay:
       raise Exception('Not supported for now..')
     self.lock = threading.Lock()
     self._latest_action = None
-    self._frames_q = queue.Queue(1)
+    if self.streaming_setting:
+      self._frames_q = queue.Queue()
+      self._action_q = queue.Queue()
+    else:
+      self._frames_q = queue.Queue(1)
     self._game_stats = []
     self.game_id = None
     self.skip_count = None
@@ -106,15 +112,13 @@ class GamePlay:
   def _make_env(self, env_number=0):
     env = gym.make(self.env_name, frameskip=1, repeat_action_probability=0.)
     if self.dump_video:
-      env = gym.wrappers.Monitor(env,
-                                 os.path.join(self.results_dir,
-                                              'video_%d' % env_number),
-                                 video_callable=lambda _: True,
-                                 force=True)
+      env = Monitor(env,
+                    os.path.join(self.results_dir, 'video_%d' % env_number),
+                    video_callable=lambda _: True,
+                    force=True)
     env = FireResetEnv(env)
     env = MapState(env, lambda im: cv2.resize(im, IMAGE_SIZE))
     env = FrameStack(env, FRAME_HISTORY)
-    env = LimitLength(env, self.max_steps)
     return env
 
   def _start_ping(self):
@@ -127,8 +131,11 @@ class GamePlay:
     return proc
 
   def _receive_actions(self, act):
-    with self.lock:
-      self._latest_action = [time.time(), act]
+    if self.streaming_setting:
+      self._action_q.put([time.time(), act])
+    else:
+      with self.lock:
+        self._latest_action = [time.time(), act]
 
   def push_frames(self):
     return self._frames_q.get()
@@ -215,24 +222,48 @@ class GamePlay:
     isOver = False
     clock = Clock()
     clock.reset()
+    new_game_last_step = False
 
     # while not isOver:
     while n_steps < self.max_steps:
-      put_overwrite(self._frames_q, self._wrap_frame(n_steps, obs))
-      time.sleep(max(0, self._step_sleep_time - clock.time_elapsed()))
-      clock.reset()
+      if self.streaming_setting:
+        self._frames_q.put(self._wrap_frame(n_steps, obs))
+      else:
+        put_overwrite(self._frames_q, self._wrap_frame(n_steps, obs))
 
-      with self.lock:
-        act = self._latest_action
-        self._latest_action = None
+      if not self.streaming_setting:
+        t = self._step_sleep_time - clock.time_elapsed()
+        if -t > 1e-3:
+          if not new_game_last_step:
+            print('sps too high for the current gameserver.... %.3f' % t)
+        else:
+          time.sleep(max(0, t))
+        clock.reset()
+
+      if self.streaming_setting:
+        if clock.time_elapsed() >= self.time_limit:
+          break
+        else:
+          try:
+            act = self._action_q.get(timeout=self.time_limit -
+                                     clock.time_elapsed())
+          except queue.Empty:
+            break
+      else:
+        with self.lock:
+          act = self._latest_action
+          self._latest_action = None
 
       act = self._unwrap_action(act, n_steps)
       obs, r, isOver, info = env.step(act)
       if self.render:
         env.render()
 
-      if isOver and n_steps < self.max_steps - 1:
+      if isOver:
         env, obs = self._new_game()
+        new_game_last_step = True
+      else:
+        new_game_last_step = False
 
       print('.', end='', flush=True)
       sum_r += r
@@ -288,7 +319,7 @@ def main(argv):
       render=args.render,
       frameskip=args.frameskip,
       use_latest_act_as_default=args.use_latest_act_as_default,
-  )
+      streaming_setting=args.streaming_setting)
   game_play.start()
 
 

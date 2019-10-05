@@ -25,6 +25,8 @@ class Receiver:
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 7000)
+    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 50000)
 
     self.bind = bind
     self.connected = False
@@ -86,10 +88,12 @@ class Receiver:
   def _read_n_bytes(self, conn, n_bytes):
     msg = bytearray()
     while len(msg) < n_bytes:
-      data = conn.recv(min(READ_SIZE, n_bytes))
+      data = conn.recv(min(READ_SIZE, n_bytes - len(msg)))
       if not data:
         raise ConnectionError
       msg.extend(data)
+
+    assert len(msg) == n_bytes
     return msg
 
   def _read_header(self, conn):
@@ -106,8 +110,10 @@ class Receiver:
           msg = self._read_n_bytes(conn, l)
           handler(self._deserializer(msg))
         if self.verbose:
-          print('cycle time: %.2f' % timer.time())
+          print('cycle time: %.3f' % timer.time())
     except ConnectionError:
+      if self.verbose:
+        print('Received ConnectionError')
       return
 
 

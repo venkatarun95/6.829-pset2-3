@@ -68,6 +68,31 @@ def parse_mahimahi_out(fname, type):
   return x, y
 
 
+def get_q_size_mahimahi(fname):
+  cur_ms = 0
+  queue_size = []
+  bytes_accum = 0
+
+  with open(fname) as f:
+    for line in f.readlines():
+      if not line.startswith('#'):
+        if '+' in line or '-' in line:
+          l = line.split()
+
+          while int(l[0]) - cur_ms > args.ms_per_bin:
+            queue_size.append(bytes_accum)
+            cur_ms += args.ms_per_bin
+
+          if '+' in line:
+            bytes_accum += float(l[2])
+          else:
+            bytes_accum -= float(l[2])
+
+  y = [q / 1500.0 for q in queue_size]
+  x = np.arange(0, len(y) * args.ms_per_bin, args.ms_per_bin) / 1e3
+  return x, y
+
+
 # Visualizing Egress doesn't make much sense for our situation
 for t in ['Ingress']:
   plt.figure()

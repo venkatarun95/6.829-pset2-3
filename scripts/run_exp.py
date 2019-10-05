@@ -3,12 +3,13 @@
   python3 scripts/run_exp.py --model_cache_dir=/home/arc/model_cache_dir/ -n test --results_dir=/tmp/base --rtt=10 --time=10 --thr=4 --action_port=10000 --frames_port=10001 --dump_video
 """
 import argparse
+import numpy as np
 import os
 import subprocess
 import sys
 import threading
 
-from rl_app.plt_util import parse_mahimahi_out, parse_ping
+from rl_app.plt_util import parse_mahimahi_out, parse_ping, get_q_size_mahimahi
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 mpl.use('Agg')
@@ -28,6 +29,7 @@ parser.add_argument('--name',
 parser.add_argument('--results_dir', default='results/', type=str)
 # parser.add_argument('--cc', default='cubic', type=str)
 parser.add_argument('-r', '--rtt', type=int, help='min rtt in milliseconds.')
+parser.add_argument('--sps', type=int, default=90)
 parser.add_argument('--time',
                     type=int,
                     default=120,
@@ -50,7 +52,11 @@ parser.add_argument('--disable_mahimahi',
 parser.add_argument('--dry_run', dest='dry_run', action='store_true')
 parser.add_argument('--action_port', type=int, required=True)
 parser.add_argument('--frames_port', type=int, required=True)
+parser.add_argument('--streaming_setting',
+                    action='store_true',
+                    dest='streaming_setting')
 parser.add_argument('remaining_args', nargs='*')
+args = parser.parse_args()
 
 
 def run_cmd(cmd, blocking=True, dry_run=False):
@@ -96,7 +102,7 @@ def get_mahimahi_stub(args):
   uplink_log = os.path.join(args.results_dir, args.name, 'mm_uplink.log')
   downlink_log = os.path.join(args.results_dir, args.name, 'mm_downlink.log')
 
-  cmd = 'mm-delay {delay} mm-link --uplink-queue=droptail --uplink-queue-args="packets={queue_size}" \
+  cmd = 'mm-delay {delay} mm-link --uplink-queue=droptail --uplink-queue-args="bytes={queue_size}" \
   {uplink_thr} {downlink_thr} --uplink-log={uplink_log} --downlink-log={downlink_log}'.format(
       delay=int(args.rtt / 2),
       uplink_thr=thr_file,
@@ -104,7 +110,7 @@ def get_mahimahi_stub(args):
       uplink_log=uplink_log,
       downlink_log=downlink_log,
       queue_size=int(args.queue_size_factor * float(args.thr) * args.rtt *
-                     1e3 / MTU_BYTES))
+                     1000))
   cmd += ' <<EOF\n{cmd}\nEOF'
   return cmd
 
@@ -115,13 +121,16 @@ def get_server_cmd(args):
   cmd += ' --frames_port=%d --action_port=%d --model_fname=%s/%s.npz' % (
       args.frames_port, args.action_port, args.model_cache_dir, args.env_name)
   cmd += ' --time=%d' % (args.time + 20)
+  if args.streaming_setting:
+    cmd += ' --streaming_setting'
   return cmd
 
 
 def get_client_cmd(args, disable_mahimahi):
   dump_dir = os.path.join(args.results_dir, args.name, 'game_results')
   cmd = 'export PYTHONPATH="$PYTHONPATH:%s";' % os.getcwd()
-  cmd += 'python3 rl_app/gameplay.py -- --frameskip=3 --sps=90 --env_name=%s' % args.env_name
+  cmd += 'python3 rl_app/gameplay.py -- --frameskip=3 --sps=%d --env_name=%s' % (
+      args.sps, args.env_name)
   if disable_mahimahi:
     cmd += ' --server_ip=127.0.0.1'
   else:
@@ -133,33 +142,54 @@ def get_client_cmd(args, disable_mahimahi):
     cmd += ' --render'
   if args.dump_video:
     cmd += ' --dump_video'
+  if args.streaming_setting:
+    cmd += ' --streaming_setting'
 
   if args.remaining_args:
     cmd += ' '
     cmd += (' '.join(args.remaining_args))
+
   return cmd
 
 
 def plot_mahimahi(args):
   plt.figure()
-  plt.plot(*parse_mahimahi_out(os.path.join(args.results_dir, args.name,
-                                            'mm_uplink.log'),
-                               'Capacity',
-                               ms_per_bin=200),
-           label='Capacity')
-  plt.plot(*parse_mahimahi_out(os.path.join(args.results_dir, args.name,
-                                            'mm_uplink.log'),
-                               'Ingress',
-                               ms_per_bin=200),
-           label='Ingress')
+  x_cap, y_cap = parse_mahimahi_out(os.path.join(args.results_dir, args.name,
+                                                 'mm_uplink.log'),
+                                    'Capacity',
+                                    ms_per_bin=200)
+  plt.plot(x_cap, y_cap, label='Capacity-%.3f' % np.mean(y_cap[20:]))
+  x_ing, y_ing = parse_mahimahi_out(os.path.join(args.results_dir, args.name,
+                                                 'mm_uplink.log'),
+                                    'Ingress',
+                                    ms_per_bin=200)
+  plt.plot(x_ing, y_ing, label='Ingress-%.3f' % np.mean(y_ing[20:]))
+  x_eng, y_eng = parse_mahimahi_out(os.path.join(args.results_dir, args.name,
+                                                 'mm_uplink.log'),
+                                    'Egress',
+                                    ms_per_bin=200)
+  plt.plot(x_eng, y_eng, label='Egress-%.3f' % np.mean(y_eng[20:]))
   plt.xlabel('sec')
   plt.ylabel('Mbps')
+  plt.legend()
   plt.savefig(
       fname=os.path.join(args.results_dir, args.name, 'throughput.png'))
 
 
-def main(argv):
-  args = parser.parse_args(argv[1:])
+def plot_qsize(args):
+  x, y = get_q_size_mahimahi(os.path.join(args.results_dir, args.name,
+                                          'mm_uplink.log'),
+                             ms_per_bin=200)
+  plt.figure()
+  plt.plot(x, y, label='Qsize-%.3f' % np.mean(y[20:]))
+  plt.xlabel('sec')
+  plt.xlabel('sec')
+  plt.ylabel('# packets')
+  plt.legend()
+  plt.savefig(fname=os.path.join(args.results_dir, args.name, 'qsize.png'))
+
+
+def main():
   if args.disable_mahimahi:
     print('****************')
     print('WARNING: Disabling mahimahi')
@@ -182,6 +212,7 @@ def main(argv):
   ret = run_cmd(cli_cmd, blocking=True, dry_run=args.dry_run)
   if ret == 0 and not args.dry_run:
     plot_mahimahi(args)
+    plot_qsize(args)
 
   ret2 = 0
   if not args.dry_run:
@@ -198,4 +229,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-  main(sys.argv)
+  main()

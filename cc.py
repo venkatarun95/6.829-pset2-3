@@ -4,6 +4,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cwnd', type=int, required=True)
+parser.add_argument('--rate', type=int)
 args = parser.parse_args()
 
 
@@ -14,7 +15,13 @@ class ConstFlow():
     self.datapath = datapath
     self.datapath_info = datapath_info
     self.cwnd = args.cwnd
-    self.datapath.set_program("default", [("Cwnd", int(self.cwnd))])
+    self.rate = args.rate
+
+    l = [("Cwnd", int(self.cwnd))]
+    if args.rate is not None:
+      l += [("Rate", int(self.rate))]
+
+    self.datapath.set_program("default", l)
 
   def on_report(self, r):
     sys.stdout.write(
