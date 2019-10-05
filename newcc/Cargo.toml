@@ -1,0 +1,15 @@
+[package]
+name = "newcc"
+version = "0.1.0"
+authors = ["6.829"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fnv = "1"
+portus = "^0.4.1"
+slog = "2"
+slog-async = "2"
+slog-term = "2"
+time = "0.1"

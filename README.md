@@ -41,9 +41,7 @@ CCP
 
 This lab makes significant use of [ccp](https://ccp-project.github.io). You will be implementing a congestion control algorithm using this framework. CCP exposes both a Rust and a Python API. Documentation for the Rust API and `portus`, the CCP runtime library, is [here](https://docs.rs/portus). The Python API is undocumented but wraps the API defined in `portus`.
 
-While we recommend using the Rust API, we will also accept Python submissions. As a result, we leave it up to you to add to this repository your own code organization for your submission, and you must modify `scripts/algs.py` and the `your_code` directory to produce results for your algorithm when `scripts/run_exp.py` is run.
-You are free to modify any of the scripts here for your experimental convenience, but when we run your code we will discard all changes to current files in this repository except `scripts/algs.py` and the `your_code` directory.
-
+While we recommend using the Rust API, we will also accept Python submissions. If you are using rust, modify the rust crate in the `newcc` directory. We have provided a skeleton implementation. You can implement a wide variety of algorithms by just modifying the `NewCC::congestion_control` function in `src/cc.rs`. Feel free to modify the rest of the crate and the datapath program defined in `NewCCConfig::datapath_programs`.
 
 Submission Instructions
 -----------------------

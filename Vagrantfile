@@ -26,6 +26,12 @@ sudo ./ccp_kernel_load ipc=0
 # Use CCP as our default kernel module
 sudo sysctl -w net.ipv4.tcp_congestion_control=ccp
 
+# Download module
+mkdir model_cache_dir
+cd model_cache_dir
+wget http://models.tensorpack.com/OpenAIGym/Breakout-v0.npz
+cd ..
+
 SCRIPT
 
 Vagrant.configure("2") do |config|
