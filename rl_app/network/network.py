@@ -3,8 +3,10 @@ from rl_app.network.serializer import get_serializer, get_deserializer, int_from
 from rl_app.util import Timer
 import time
 from threading import Thread
+import fcntl, array, struct
 
 READ_SIZE = 8192
+MTU = 1500
 
 
 class Receiver:
@@ -15,18 +17,20 @@ class Receiver:
                bind=True,
                serializer='pyarrow',
                deserializer='pyarrow',
+               data_unsent_thresold=MTU,
                verbose=False):
     self._thread = None
     self.host = host
     self.port = port
+    self._data_unsent_thresold = data_unsent_thresold
     self._serializer = get_serializer(serializer)
     self._deserializer = get_deserializer(deserializer)
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 7000)
-    # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 0000)
+    # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 20000)
+    # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 9000)
 
     self.bind = bind
     self.connected = False
@@ -117,20 +121,43 @@ class Receiver:
       return
 
 
+# SIOCOUTQ = 0x5411
+SIOCOUTQNSD = 0x894B
+
+
 class Sender(Receiver):
 
   def _add_header(self, msg):
     header = int_to_bytes(len(msg))
     return header + msg
 
+  def getTCPInfo(self, s):
+    fmt = "B" * 7 + "I" * 24 + "Q" * 4 + "I" * 6 + "Q" * 3
+    x = struct.unpack(fmt,
+                      s.getsockopt(socket.IPPROTO_TCP, socket.TCP_INFO, 184))
+    # print('cwnd estimate: ', tcp_info[25] * tcp_info[20])
+    return x
+
+  def _get_data_not_sent(self, fno):
+    buf = array.array('i', [-1])
+    fcntl.ioctl(fno, SIOCOUTQNSD, buf, True)
+    val = int(buf[0])
+    if self.verbose:
+      print('not yet sent (SIOCOUTQNSD): ', val)
+    return val
+
   def _loop(self, conn, handler):
+    fno = conn.fileno()
     while True:
+      while True:
+        data_not_sent = self._get_data_not_sent(fno)
+        if data_not_sent <= self._data_unsent_thresold:
+          break
+        else:
+          time.sleep(.0005)
       data = handler()
       msg = self._serializer(data)
       msg = self._add_header(msg)
-      # conn.sendall(msg)
-      sent = 0
-      while sent < len(msg):
-        sent += conn.send(msg[sent:])
-
-      assert sent == len(msg)
+      while len(msg) > 0:
+        sent = conn.send(msg)
+        msg = msg[sent:]

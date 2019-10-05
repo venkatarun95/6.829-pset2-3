@@ -3,8 +3,9 @@ import portus
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--cwnd', type=int, required=True)
+parser.add_argument('--cwnd', type=int)
 parser.add_argument('--rate', type=int)
+parser.add_argument('--read_only', dest='read_only', action='store_true')
 args = parser.parse_args()
 
 
@@ -17,9 +18,15 @@ class ConstFlow():
     self.cwnd = args.cwnd
     self.rate = args.rate
 
-    l = [("Cwnd", int(self.cwnd))]
-    if args.rate is not None:
-      l += [("Rate", int(self.rate))]
+    if self.cwnd is None and self.rate is None:
+      assert args.read_only
+
+    if args.read_only:
+      l = []
+    else:
+      l = [("Cwnd", int(self.cwnd))]
+      if args.rate is not None:
+        l += [("Rate", int(self.rate))]
 
     self.datapath.set_program("default", l)
 
@@ -28,7 +35,8 @@ class ConstFlow():
         "[report] cwnd={:02d}p rtt={:03d}ms acked={:03d}p loss={:02d}p\n".
         format(int(self.cwnd / self.datapath_info.mss), int(r.rtt / 1000.0),
                int(r.acked / self.datapath_info.mss), r.loss))
-    self.datapath.update_field("Cwnd", int(self.cwnd))
+    if not args.read_only:
+      self.datapath.update_field("Cwnd", int(self.cwnd))
 
 
 class Const(portus.AlgBase):
@@ -48,7 +56,7 @@ class Const(portus.AlgBase):
                     (:= Report.loss Ack.lost_pkts_sample)
                     (fallthrough)
                 )
-                (when (> Micros 500000)
+                (when (> Micros 1000)
                     (report)
                     (:= Micros 0)
                 )

@@ -43,6 +43,10 @@ parser.add_argument('--use_latest_act_as_default',
 parser.add_argument('--streaming_setting',
                     action='store_true',
                     dest='streaming_setting')
+parser.add_argument('--use_iperf', dest='use_iperf', action='store_true')
+parser.add_argument('--use_', dest='use_iperf', action='store_true')
+parser.add_argument('--verbose', dest='verbose', action='store_true')
+
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
 GameStat = namedtuple(
@@ -63,7 +67,9 @@ class GamePlay:
                results_dir=None,
                dump_video=None,
                frameskip=1,
-               use_latest_act_as_default=False):
+               use_latest_act_as_default=False,
+               use_iperf=False,
+               verbose=False):
 
     self.max_steps = sps * time_limit
     self.sps = sps
@@ -92,20 +98,32 @@ class GamePlay:
     self._game_stats = []
     self.game_id = None
     self.skip_count = None
+    self.verbose = verbose
+    self.use_iperf = use_iperf
 
   def start(self):
     self._frames_socket = Sender(host=self.server_ip,
                                  port=self.frames_port,
-                                 bind=False)
+                                 bind=False,
+                                 verbose=self.verbose)
     self._actions_socket = Receiver(host=self.server_ip,
                                     port=self.action_port,
-                                    bind=False)
+                                    bind=False,
+                                    verbose=self.verbose)
     self._frames_socket.start_loop(self.push_frames, blocking=False)
     self._actions_socket.start_loop(self._receive_actions, blocking=False)
     proc = self._start_ping()
+    if self.use_iperf:
+      proc2 = self._start_iperf_client()
+
     self._process()
+
     if proc.poll() is None:
       proc.kill()
+
+    if self.use_iperf:
+      if proc2.poll() is None:
+        proc2.kill()
 
     self._plot_results()
 
@@ -120,6 +138,15 @@ class GamePlay:
     env = MapState(env, lambda im: cv2.resize(im, IMAGE_SIZE))
     env = FrameStack(env, FRAME_HISTORY)
     return env
+
+  def _start_iperf_client(self):
+
+    proc = subprocess.Popen('exec iperf3 -c %s -t %s' %
+                            (self.server_ip, self.time_limit),
+                            stderr=sys.stderr,
+                            stdout=sys.stdout,
+                            shell=True)
+    return proc
 
   def _start_ping(self):
     proc = subprocess.Popen('exec ping %s -w %s -i 0.2 > %s' %
@@ -323,7 +350,9 @@ def main(argv):
       render=args.render,
       frameskip=args.frameskip,
       use_latest_act_as_default=args.use_latest_act_as_default,
-      streaming_setting=args.streaming_setting)
+      streaming_setting=args.streaming_setting,
+      use_iperf=args.use_iperf,
+      verbose=args.verbose)
   game_play.start()
 
 

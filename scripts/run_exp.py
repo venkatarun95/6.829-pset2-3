@@ -56,6 +56,7 @@ parser.add_argument('--frames_port', type=int, required=True)
 parser.add_argument('--streaming_setting',
                     action='store_true',
                     dest='streaming_setting')
+parser.add_argument('--use_iperf', dest='use_iperf', action='store_true')
 parser.add_argument('remaining_args', nargs='*')
 args = parser.parse_args()
 
@@ -146,6 +147,8 @@ def get_client_cmd(args, disable_mahimahi):
     cmd += ' --dump_video'
   if args.streaming_setting:
     cmd += ' --streaming_setting'
+  if args.use_iperf:
+    cmd += ' --use_iperf'
 
   if args.remaining_args:
     cmd += ' '
