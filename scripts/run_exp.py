@@ -51,8 +51,8 @@ parser.add_argument('--disable_mahimahi',
                     dest='disable_mahimahi',
                     action='store_true')
 parser.add_argument('--dry_run', dest='dry_run', action='store_true')
-parser.add_argument('--action_port', type=int, required=True)
-parser.add_argument('--frames_port', type=int, required=True)
+parser.add_argument('--action_port', type=int, default=10000)
+parser.add_argument('--frames_port', type=int, default=10001)
 parser.add_argument('--use_iperf', dest='use_iperf', action='store_true')
 parser.add_argument('remaining_args', nargs='*')
 args = parser.parse_args()

@@ -27,8 +27,9 @@ sudo ./ccp_kernel_load ipc=0
 sudo sysctl -w net.ipv4.tcp_congestion_control=ccp
 
 # Download module
+cd /pset2-3/
 mkdir model_cache_dir
-cd model_cache_dir
+cd /pset2-3/model_cache_dir
 wget http://models.tensorpack.com/OpenAIGym/Breakout-v0.npz
 cd ..
 
