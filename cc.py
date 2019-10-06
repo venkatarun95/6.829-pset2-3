@@ -56,7 +56,7 @@ class Const(portus.AlgBase):
                     (:= Report.loss Ack.lost_pkts_sample)
                     (fallthrough)
                 )
-                (when (> Micros 1000)
+                (when (> Micros 500000)
                     (report)
                     (:= Micros 0)
                 )

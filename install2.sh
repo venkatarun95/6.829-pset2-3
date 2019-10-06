@@ -1,4 +1,5 @@
 sudo DEBIAN_FRONTEND=noninteractive apt-get --yes update
+sudo DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:keithw/mahimahi -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get --yes install build-essential \
   git python3 python3-pip bridge-utils mahimahi python-opengl cmake \
   libopenmpi-dev ffmpeg python3-dev zlib1g-dev iperf
