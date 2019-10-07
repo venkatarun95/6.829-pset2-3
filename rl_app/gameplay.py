@@ -44,6 +44,7 @@ parser.add_argument('--use_iperf', dest='use_iperf', action='store_true')
 parser.add_argument('--use_', dest='use_iperf', action='store_true')
 parser.add_argument('--verbose', dest='verbose', action='store_true')
 
+NEW_GAME_PENALTY = 10
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
 GameStat = namedtuple(
@@ -170,7 +171,8 @@ class GamePlay:
     try:
       return self._frames_q.get_nowait()
     except queue.Empty:
-      print('App limited!...')
+      # print('App limited!...')
+      pass
     return self._frames_q.get()
 
   def _encode_obs(self, obs):
@@ -299,10 +301,12 @@ class GamePlay:
       print('# of lives left: ', info['ale.lives'])
     else:
       print('Gameover - No lives left!!')
-    print('Score: ', sum_r)
+    score = sum_r - (self.game_id * NEW_GAME_PENALTY)
+    print('Score: ', score)
     self._log_results(
         **dict(n_steps=n_steps,
-               total_score=sum_r,
+               sum_reward=sum_r,
+               score=score,
                lives_remaining=info['ale.lives'],
                n_skipped_actions=n_skipped_actions,
                total_games=self.game_id + 1))

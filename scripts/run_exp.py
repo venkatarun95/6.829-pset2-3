@@ -29,7 +29,7 @@ parser.add_argument('--name',
 parser.add_argument('--results_dir', default='results/', type=str)
 # parser.add_argument('--cc', default='cubic', type=str)
 parser.add_argument('-r', '--rtt', type=int, help='min rtt in milliseconds.')
-parser.add_argument('--sps', type=int, default=90)
+parser.add_argument('--sps', type=int, default=30)
 parser.add_argument('--time',
                     type=int,
                     default=120,
@@ -174,19 +174,6 @@ def plot_mahimahi(args):
       fname=os.path.join(args.results_dir, args.name, 'throughput.png'))
 
 
-def plot_qsize(args):
-  x, y = get_q_size_mahimahi(os.path.join(args.results_dir, args.name,
-                                          'mm_uplink.log'),
-                             ms_per_bin=200)
-  plt.figure()
-  plt.plot(x, y, label='Qsize-%.3f' % np.mean(y[20:]))
-  plt.xlabel('sec')
-  plt.xlabel('sec')
-  plt.ylabel('# packets')
-  plt.legend()
-  plt.savefig(fname=os.path.join(args.results_dir, args.name, 'qsize.png'))
-
-
 def main():
   if args.disable_mahimahi:
     print('****************')
@@ -210,7 +197,7 @@ def main():
   ret = run_cmd(cli_cmd, blocking=True, dry_run=args.dry_run)
   if ret == 0 and not args.dry_run:
     plot_mahimahi(args)
-    plot_qsize(args)
+    # plot_qsize(args)
 
   ret2 = 0
   if not args.dry_run:
