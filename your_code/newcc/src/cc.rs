@@ -11,10 +11,10 @@ pub struct NewCC<T: Ipc> {
     control_channel: Datapath<T>,
     logger: Option<slog::Logger>,
     sc: Scope,
-    /// Set this variable to whatever congestion window you want
-    cwnd: u32,
-    /// Set this variable to whatever rate (packets/second) you want
-    rate: u32,
+    /// Set this variable to whatever congestion window you want in bytes
+    cwnd: f64,
+    /// Set this variable to whatever rate (in bytes/second) you want
+    rate: f64,
     agg_measurement: AggMeasurement,
     prev_report_time: u64,
 }
@@ -24,7 +24,10 @@ impl<T: Ipc> NewCC<T> {
     /// call it for you in `on_report`.
     fn update(&self) {
         self.control_channel
-            .update_field(&self.sc, &[("Cwnd", self.cwnd), ("Rate", self.rate)])
+            .update_field(
+                &self.sc,
+                &[("Cwnd", self.cwnd as u32), ("Rate", self.rate as u32)],
+            )
             .unwrap()
     }
 
@@ -51,19 +54,28 @@ impl<T: Ipc> NewCC<T> {
 
         // TODO: Set self.cwnd and self.rate as you wish. Skeletal implementations are given below
 
-        // A default implementation where self.cwnd is a constant
-        self.cwnd = 12000;
+        // A default implementation where we do AIMD on self.cwnd
+        if loss != 0 {
+            self.cwnd = self.cwnd / 2.;
+        } else {
+            self.cwnd += acked as f64 * 1448. / self.cwnd;
+        }
+
         // If rate is 0, it will be ignored and only cwnd will be used. If nonzero, units are in
         // ptks/sec
-        self.rate = 0;
+        self.rate = 0.;
     }
 
     fn handle_timeout(&mut self) {
         // A timeout happened. Indicates severe! React accordingly
 
+        // In our example implementation, we treat a timeout is a much more serious indication of
+        // loss. Reset cwnd
+        self.cwnd = 12000.;
+
         self.logger.as_ref().map(|log| {
             warn!(log, "timeout";
-                "curr_cwnd (pkts)" => self.cwnd / 1448,
+                "curr_cwnd (pkts)" => self.cwnd / 1448.,
             );
         });
     }
@@ -82,6 +94,8 @@ impl<T: Ipc> CongAlg<T> for NewCCConfig {
     }
 
     fn datapath_programs(&self) -> FnvHashMap<&'static str, String> {
+        // This 'datapath program' instructs CCP on what variables to return to the userspace
+        // program, and at what intervals. See CCP documentation for details
         vec![(
             "newcc",
             "(def
@@ -109,7 +123,6 @@ impl<T: Ipc> CongAlg<T> for NewCCConfig {
                 (:= Report.timeout Flow.was_timeout)
                 (:= Report.now Ack.now)
                 (fallthrough)
-                (report)
             )
             (when (|| Flow.was_timeout (> Report.loss 0))
                 (:= Micros 0)
@@ -129,8 +142,8 @@ impl<T: Ipc> CongAlg<T> for NewCCConfig {
         let mut s = NewCC {
             control_channel: control,
             logger: self.logger.clone(),
-            cwnd: 15000,
-            rate: 0,
+            cwnd: 12000.,
+            rate: 0.,
             sc: Default::default(),
             // TODO: 0.5 says that it will report a measurement once every half RTT. You may
             // increase this. If you want to recrease it, change the 4rth last line in the program
@@ -170,10 +183,11 @@ impl<T: Ipc> portus::Flow for NewCC<T> {
         if report_status == ReportStatus::UrgentReport {
             if was_timeout {
                 self.handle_timeout();
+            } else {
+                self.congestion_control(acked, sacked, loss, inflight, rtt, min_rtt, now);
             }
-        } else if report_status == ReportStatus::NoReport || acked + loss + sacked == 0 {
+        } else if report_status == ReportStatus::Report && acked + loss + sacked != 0 {
             self.congestion_control(acked, sacked, loss, inflight, rtt, min_rtt, now);
-        } else {
         }
 
         // Send decisions to CCP
@@ -182,7 +196,7 @@ impl<T: Ipc> portus::Flow for NewCC<T> {
         self.logger.as_ref().map(|log| {
             debug!(log, "got ack";
                    "acked(pkts)" => acked / 1448u32,
-                   "curr_cwnd (pkts)" => self.cwnd / 1460,
+                   "curr_cwnd (pkts)" => self.cwnd / 1460.,
                    "loss" => loss,
                    "sacked" => sacked,
                    "rtt" => rtt,
