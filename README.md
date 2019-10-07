@@ -29,7 +29,8 @@ The gameplay server is streaming the game frames on an emulated link using [mahi
 The throughput and delay of this link are varied to simulate cellular and wide range of link conditions for evaluation.
 You do not need to implement any part of the game play or emulation as it has already been provided to you along with the starter code. You can just focus on implementing a good congestion control algorithm that can achieve low delays while maintaing high throughput.
 
-Here is demo when an oracle congestion control algorithm is used under favorable network conditions:
+Here is demo when an oracle congestion control algorithm is used under favorable network conditions.
+Click on the image below to open the demo video on youtube.
 
 [![Breakout gameplay](http://img.youtube.com/vi/QuW4gUrAqTc/0.jpg)](http://www.youtube.com/watch?v=QuW4gUrAqTc)
 
