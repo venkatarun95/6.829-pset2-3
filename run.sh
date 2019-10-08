@@ -16,6 +16,10 @@ time=$4
 queue=$5
 rest="${@:6}"
 
+action_port=10000
+frames_port=10001
+
+
 # First check if the path to add is already part of the variable:
 [[ ":$PYTHONPATH:" != *":`pwd`:"* ]] && PYTHONPATH="${PYTHONPATH}:`pwd`"
 
