@@ -10,7 +10,7 @@ sudo python3 -m pip install --upgrade git+https://github.com/tensorpack/tensorpa
 # for mahimahi
 sudo sysctl -w net.ipv4.ip_forward=1
 
-cd /home/vagrant
+cd $HOME
 
 # Install Rust
 curl https://sh.rustup.rs -sSf | sh -s -- -y
