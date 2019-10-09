@@ -1,9 +1,9 @@
 ## Mahimahi traces
 
-We use [mahimahi](http://mahimahi.mit.edu/) as our network emulation for this pset.
+We use [mahimahi](http://mahimahi.mit.edu/) as our network emulator for this pset.
 
-In order to emulate a constant capacity link using mahimahi, we need to first create a trace file.
-This trace file should be written according to the following format:
+In order to emulate a constant capacity link using mahimahi, we need to first create a throughput trace file.
+This trace file should be created according to the following format:
 
 ```
 Each line gives a timestamp in milliseconds (from the beginning of the
@@ -29,4 +29,4 @@ to generate the desired trace.
 On the other hand if `$x` is rational number with the reduced form `x = p/q` then use the following command:
 ```python3 generate_const_mahimahi_trace.py -n $p -d $q```
 
-The above script dumps the trace to stdout. Redirect that to a file and save it as `$xmbps.log` in the `mm_trace` directory.
+The above script dumps the trace to stdout. Redirect that to a file named `$xmbps.log` in the `mm_trace` directory.
