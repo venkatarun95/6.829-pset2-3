@@ -22,9 +22,10 @@ class NewCCFlow():
     # TODO: Implement your congestion control algorithm here. As an example, we
     # have implemented AIMD
     if r.loss > 0:
-      self.cwnd /= 0
+      self.cwnd /= 2
     else:
       self.cwnd += 1448 * r.acked / self.cwnd
+    self.cwnd = max(self.cwnd, 1)
 
     self.datapath.update_field("Cwnd", int(self.cwnd))
 
