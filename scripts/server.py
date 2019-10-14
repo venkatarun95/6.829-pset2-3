@@ -16,7 +16,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         print(b"Error: %s" % err.encode())
 
     def do_GET(self):
-        if self.path == '/leaderboard':
+        if self.path == '/leaderboard' or self.path='/':
             self.leaderboard()
         else:
             self.error('Unknown Path')
@@ -34,7 +34,6 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         sorted = [(scores[x][0], x) for x in scores]
         sorted.sort(key=lambda x: x[0])
 
-        print(sorted, scores)
         # Prepare HTML for the list
         html_list = ""
         for id, (avgscore, team) in enumerate(sorted):
@@ -141,11 +140,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         for member in tar:
             name = os.path.normpath(member.name)
             name = name.split('/')
-            if name[0] != 'eval_results':
-                self.error('Unexpected tarfile format. Expected direcotry "eval_results"')
             if len(name) != 2:
                 continue
-            expts.append(name[1])
+            expts.append(name[0] + '/' + name[1])
 
         if len(expts) == 0:
             if len(name) == 1:
@@ -155,10 +152,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         # Extract results from the experiments
         results = []
         for expt in expts:
-            rfname = os.path.join('eval_results', expt, 'game_results/results.json')
+            rfname = os.path.join(expt, 'game_results/results.json')
             rfile = tar.extractfile(rfname)
             result = json.load(rfile)
-            results.append((expt, result))
+            expt_name = expt.split('/')[1]
+            results.append((expt_name, result))
         print(json.dumps(results))
 
         avg_score = sum([x[1]['score'] for x in results]) / len(results)
@@ -193,7 +191,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if team in teams:
-            self.error('Team "%s" already registered' % team)
+            self.error('Team "%s" already registered. Members are %s' % (team, json.dumps(teams[team])))
             return
 
         teams[team] = members

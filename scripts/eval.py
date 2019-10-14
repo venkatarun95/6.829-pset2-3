@@ -5,11 +5,13 @@ import os
 import random
 import shutil
 import subprocess
+import tarfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--run', dest='run', action='store_true')
 parser.add_argument('--upload', dest='upload', action='store_true')
-parser.add_argument('--results_dir', default='eval_results/', type=str)
+parser.add_argument('--results_dir', help='Directory to store results in/upload results from', default='eval_results/', type=str)
+parser.add_argument('--team', help='Registered team name', default='', type=str)
 args = parser.parse_args()
 
 def renormalize_trace_file(ifname, ofname, tpt):
@@ -54,7 +56,7 @@ def run():
 
     # Pick some random configurations and run them
     random.seed(1)
-    for _ in range(2):
+    for _ in range(5):
         tracefile = tracefiles[random.randint(0, len(tracefiles))]
         # In mbps
         avg_tpt = 0.5 + 1.5 * random.random()
@@ -63,7 +65,7 @@ def run():
         # queue =  queue_size_factor * BDP
         queue_size_factor = 1 + 50 * random.random()
         queue = int(queue_size_factor * (1.0e6 * avg_tpt / (1500. * 8)) * (rtt / 1000.))
-        name = "%s-%.2f-%.2f-%d" % (os.path.basename('tracefile'), avg_tpt, rtt, queue)
+        name = "%s-%.2f-%.2f-%d" % (os.path.basename(tracefile), avg_tpt, rtt, queue)
 
         # Create a renormalized trace file
         renormalize_trace_file(tracefile + '.up', '/tmp/trace.up', avg_tpt)
@@ -76,5 +78,38 @@ def run():
         print(cmd)
         subprocess.run(cmd, shell=True)
 
+def upload():
+    import requests
+
+    # Check if the results directory is there
+    if not os.path.exists(args.results_dir):
+        print("Results directory '%s' doesn't exist. Run the experiment to create directory")
+        exit(1)
+
+    if args.team == '':
+        print("Please specify team name using '--team'")
+
+    # If the tarball already exists, delete
+    tfname = os.path.join(args.results_dir, 'results.tar.gz')
+    if os.path.exists(tfname):
+        os.remove(tfname)
+
+    # Put folder into a tarball
+    print("Writing tarfile...")
+    tar = tarfile.open(tfname, 'x:gz')
+    tar.add(args.results_dir)
+    tar.close()
+
+    with open(tfname, 'rb') as f:
+        files = {"results": f}
+        data = {"team": args.team}
+        r = requests.post('http://localhost:8888/upload_file', data=data, files=files)
+        print(r.content.decode())
+
+    # Example using curl
+    # curl localhost:8888/upload_file -Fteam=myteam2 -Fresults='@eval_results/results.tar.gz'
+
 if args.run:
     run()
+if args.upload:
+    upload()
