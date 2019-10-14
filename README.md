@@ -110,7 +110,7 @@ If you would like to see the game being played in real time then pass `--render`
 Leaderboard
 -----------
 
-To enable you to see how you and your classmates are doing, we have provided a leaderboard. You can use `python3 scripts/eval.py --run` to run a set of 5 experiments. Note, before you run this script your CC algorithm should already be running and `ccp` should be the default algorithm (can be set using `sudo sysctl -w net.ipv4.tcp_congestion_control=ccp`).
+To enable you to see how you and your classmates are doing, we have provided a leaderboard. You can use `python3 scripts/eval.py --run` to run a set of 5 experiments. Note, before you run this script your CC algorithm should already be running and `ccp` should be the default algorithm (can be set using `sudo sysctl -w net.ipv4.tcp_congestion_control=ccp`). Note, we choose 5 test cases for the leaderboard. Your code may be tested on a different set of networks, so don't overfit for these scenarios.
 
 This will produce results in the directory `eval_results` (you can change this directory with the `--results` option). Before uploading to leaderboard, register your team with `python3 scripts/register.py`. Then use `python3 scripts/eval.py --upload --team team_name` to upload the results to leaderboard.
 

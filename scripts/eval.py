@@ -12,6 +12,7 @@ parser.add_argument('--run', dest='run', action='store_true')
 parser.add_argument('--upload', dest='upload', action='store_true')
 parser.add_argument('--results_dir', help='Directory to store results in/upload results from', default='eval_results/', type=str)
 parser.add_argument('--team', help='Registered team name', default='', type=str)
+parser.add_argument('--seed', default=1, help='Pick a different seed for evaluation. Note, you should upload only experiments with the default seed to the leaderboard')
 args = parser.parse_args()
 
 def renormalize_trace_file(ifname, ofname, tpt):
@@ -55,7 +56,7 @@ def run():
     os.environ['PYTHONPATH'] = os.getcwd()
 
     # Pick some random configurations and run them
-    random.seed(1)
+    random.seed(args.seed)
     for _ in range(5):
         tracefile = tracefiles[random.randint(0, len(tracefiles))]
         # In mbps
