@@ -16,7 +16,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         print(b"Error: %s" % err.encode())
 
     def do_GET(self):
-        if self.path == '/leaderboard' or self.path='/':
+        if self.path == '/leaderboard' or self.path == '/':
             self.leaderboard()
         else:
             self.error('Unknown Path')

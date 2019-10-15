@@ -47,10 +47,10 @@ def run():
         shutil.rmtree(args.results_dir)
     os.mkdir(args.results_dir)
 
-    # Get all the trace files
-    tracefiles = glob.glob('/usr/share/mahimahi/traces/*.up')
-    # Remove the .up
-    tracefiles = [x[:-3] for x in tracefiles]
+    # List of all the trace files (without the .up)
+    tracefiles = ["ATT-LTE-driving-2016", "ATT-LTE-driving",
+    "TMobile-LTE-driving", "TMobile-LTE-short", "TMobile-UMTS-driving",
+    "Verizon-EVDO-driving", "Verizon-LTE-driving", "Verizon-LTE-short"]
 
     # So we can find 'rl_app' module
     os.environ['PYTHONPATH'] = os.getcwd()
@@ -58,7 +58,7 @@ def run():
     # Pick some random configurations and run them
     random.seed(args.seed)
     for _ in range(5):
-        tracefile = tracefiles[random.randint(0, len(tracefiles))]
+        tracefile = "/usr/share/mahimahi/traces/" + tracefiles[random.randint(0, len(tracefiles)-1)]
         # In mbps
         avg_tpt = 0.5 + 1.5 * random.random()
         # In ms
