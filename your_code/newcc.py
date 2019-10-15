@@ -25,7 +25,7 @@ class NewCCFlow():
       self.cwnd /= 2
     else:
       self.cwnd += 1448 * r.acked / self.cwnd
-    self.cwnd = max(self.cwnd, 1)
+    self.cwnd = max(self.cwnd, 3000)
 
     self.datapath.update_field("Cwnd", int(self.cwnd))
 
