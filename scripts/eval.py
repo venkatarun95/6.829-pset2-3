@@ -12,7 +12,7 @@ parser.add_argument('--run', dest='run', action='store_true')
 parser.add_argument('--upload', dest='upload', action='store_true')
 parser.add_argument('--results_dir', help='Directory to store results in/upload results from', default='eval_results/', type=str)
 parser.add_argument('--team', help='Registered team name', default='', type=str)
-parser.add_argument('--seed', default=1, help='Pick a different seed for evaluation. Note, you should upload only experiments with the default seed to the leaderboard')
+parser.add_argument('--seed', default=1, type=int, help='Pick a different seed for evaluation. Note, you should upload only experiments with the default seed to the leaderboard')
 args = parser.parse_args()
 
 def renormalize_trace_file(ifname, ofname, tpt):
@@ -77,7 +77,7 @@ def run():
             name=name, results_dir=args.results_dir, rtt=rtt, queue=queue
         )
         print(cmd)
-        subprocess.run(cmd, shell=True)
+        #subprocess.run(cmd, shell=True)
 
 def upload():
     import requests
