@@ -29,6 +29,7 @@ class Receiver:
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    self.socket.setsockopt(socket.SOL_TCP, socket.TCP_CONGESTION, b'ccp')
     # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 20000)
     # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 9000)
 
