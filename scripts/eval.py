@@ -72,12 +72,12 @@ def run():
         renormalize_trace_file(tracefile + '.up', '/tmp/trace.up', avg_tpt)
 
         # Run
-        cmd = 'python3 scripts/run_exp.py -n {name} --results_dir {results_dir} -r {rtt} -t /tmp/trace.up --queue_size {queue}'\
+        cmd = 'python3 scripts/run_exp.py -n {name} --results_dir {results_dir} -r {rtt} -T /tmp/trace.up --queue_size {queue}'\
         .format(
             name=name, results_dir=args.results_dir, rtt=rtt, queue=queue
         )
         print(cmd)
-        #subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True)
 
 def upload():
     import requests
@@ -85,10 +85,11 @@ def upload():
     # Check if the results directory is there
     if not os.path.exists(args.results_dir):
         print("Results directory '%s' doesn't exist. Run the experiment to create directory")
-        exit(1)
+        return
 
     if args.team == '':
         print("Please specify team name using '--team'")
+        return
 
     # If the tarball already exists, delete
     tfname = os.path.join(args.results_dir, 'results.tar.gz')
@@ -104,7 +105,7 @@ def upload():
     with open(tfname, 'rb') as f:
         files = {"results": f}
         data = {"team": args.team}
-        r = requests.post('http://localhost:8888/upload_file', data=data, files=files)
+        r = requests.post('http://6829fa18.csail.mit.edu/upload_file', data=data, files=files)
         print(r.content.decode())
 
     # Example using curl

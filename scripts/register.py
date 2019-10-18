@@ -14,5 +14,5 @@ if len(sys.argv) < 3:
 data = {'team': sys.argv[1],
         'members': sys.argv[2:]}
 
-r = requests.post(url = 'http://localhost:8888/register_team', data = data)
+r = requests.post(url = 'http://6829fa18.csail.mit.edu/register_team', data = data)
 print(r.content.decode())

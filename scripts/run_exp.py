@@ -35,8 +35,14 @@ parser.add_argument('--time',
                     default=180,
                     help='experiment time in seconds')
 parser.add_argument('-t',
+                    '--thr',
+                    type=str,
+                    required=False,
+                    help='Bottleneck Throughput (in mbps)')
+parser.add_argument('-T',
                     '--trace',
                     type=str,
+                    required=False,
                     help='Bottleneck Throughput Trace File')
 parser.add_argument('--queue_size_factor',
                     type=float,
@@ -94,7 +100,16 @@ def get_mahimahi_stub(args):
   if args.queue_size_factor is not None:
     raise Exception('queue_size-factor has been removed')
 
-  thr_file = args.trace
+  # Get trace file from options
+  if args.trace is None and args.thr is None:
+    raise Exception("Both --trace and --thr arguments given. Specify exactly one.")
+  if args.trace is not None:
+    thr_file = args.trace
+  elif args.thr is not None:
+    thr_file = './mm_traces/%smbps.log' % args.thr
+  else:
+    raise Exception("Neither --trace or --thr arguments given. Specify exactly one.")
+
   if not os.path.isfile(thr_file):
     raise Exception(
         'Throughput file not found at %s. Check mm_traces/generate_const_mahimahi_traces.sh'
