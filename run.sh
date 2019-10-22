@@ -1,14 +1,4 @@
 # add any other args to the
-if ! grep -Fxq "ccp" "/proc/sys/net/ipv4/tcp_congestion_control"; then
-  echo "ccp is not the active congestion control algorithm."
-  read -p "Are you sure to proceed (y/n)?" choice
-  case "$choice" in
-    y|Y ) echo "yes";;
-    n|N ) echo "no";;
-    * ) echo "invalid";;
-  esac
-fi
-
 name=$1
 thr=$2
 rtt=$3
