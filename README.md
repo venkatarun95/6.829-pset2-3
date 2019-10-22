@@ -121,7 +121,8 @@ After you optionally choose a teammate, come up with a team name, and enter that
 
 In the `your_code` directory, commit a file `WRITEUP.md` that includes a 1-2 paragraph writeup of your approach, why you chose it, and what you tried. This is only required for your final submission, not for leaderboard submissions.
 
-Submit a link to a *private* github.mit.edu repository (everyone must do this so we can verify teammate reciprocity). Your repository must be cloned from this starter repository. Ensure that the usernames "addanki" and "venkatar" are added as collaborators to your repository.
+Submit a link to a *private* github repository. Use this form to submit: https://forms.gle/LuFSUWpZQT57qPRA8
+Your repository must be cloned from this starter repository. Ensure that the usernames "aravic" and "venkatarun95" are added as collaborators to your repository.
 We will only consider commits made before the submission deadline. If you would like to use an extension day, include the string "EXTENSION-DAY" in *all* commit messages for commits made after the deadline AND contact the staff individually once you are done committing. You must submit the form (which tells us where your repository is) before the original deadline, even if you are using extension days. Extension days cannot be used for contest submissions.
 
 Help
