@@ -24,9 +24,6 @@ git submodule update --init --recursive
 make
 sudo ./ccp_kernel_load ipc=0
 
-# Use CCP as our default kernel module
-sudo sysctl -w net.ipv4.tcp_congestion_control=ccp
-
 # Download module
 cd /pset2-3/
 mkdir model_cache_dir
